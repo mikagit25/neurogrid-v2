@@ -32,7 +32,7 @@ export async function callLlm(
         'HTTP-Referer': 'https://neurogrid.app',
         'X-Title': 'NeuroGrid',
       },
-      timeout: 60_000,
+      timeout: 120_000,
     }
   );
 

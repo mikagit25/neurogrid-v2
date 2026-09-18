@@ -38,6 +38,16 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      LLM_PROVIDER: ${LLM_PROVIDER}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      LLM_MODEL: ${LLM_MODEL}
+      BEPAID_SHOP_ID: ${BEPAID_SHOP_ID}
+      BEPAID_SECRET_KEY: ${BEPAID_SECRET_KEY}
+      BEPAID_SANDBOX: ${BEPAID_SANDBOX:-true}
+    extra_hosts:
+      - "host-gateway:host-gateway"
     ports:
       - "4001:4001"
     depends_on:
