@@ -2,6 +2,52 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { db } from '../../db';
 import { config } from '../../config';
+import { redis } from '../../queue/queue';
+
+// ── Brute-force protection ────────────────────────────────────────────────────
+// Tracks failed login attempts in Redis.
+// IP limit:    5 failures  → blocked 15 min (prevents distributed guessing)
+// Email limit: 10 failures → blocked 60 min (prevents targeted account attack)
+
+const IP_MAX    = 5;
+const IP_TTL    = 15 * 60;      // 15 min
+const EMAIL_MAX = 10;
+const EMAIL_TTL = 60 * 60;     // 60 min
+
+export async function checkLoginLockout(ip: string, email: string) {
+  const [ipCount, emailCount] = await Promise.all([
+    redis.get(`login_fail:ip:${ip}`),
+    redis.get(`login_fail:email:${email}`),
+  ]);
+  if (parseInt(ipCount ?? '0') >= IP_MAX) {
+    throw Object.assign(
+      new Error('Too many login attempts from this IP. Try again in 15 minutes.'),
+      { status: 429 }
+    );
+  }
+  if (parseInt(emailCount ?? '0') >= EMAIL_MAX) {
+    throw Object.assign(
+      new Error('Account temporarily locked due to too many failed attempts. Try again in 1 hour.'),
+      { status: 429 }
+    );
+  }
+}
+
+export async function recordLoginFailure(ip: string, email: string) {
+  const pipeline = redis.pipeline();
+  pipeline.incr(`login_fail:ip:${ip}`);
+  pipeline.expire(`login_fail:ip:${ip}`, IP_TTL);
+  pipeline.incr(`login_fail:email:${email}`);
+  pipeline.expire(`login_fail:email:${email}`, EMAIL_TTL);
+  await pipeline.exec();
+}
+
+export async function clearLoginCounters(ip: string, email: string) {
+  await Promise.all([
+    redis.del(`login_fail:ip:${ip}`),
+    redis.del(`login_fail:email:${email}`),
+  ]);
+}
 
 export interface JwtPayload {
   userId: string;

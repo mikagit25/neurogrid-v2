@@ -3,7 +3,8 @@ import crypto from 'crypto';
 import axios from 'axios';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
-import { registerUser, loginUser, getUserById, upsertGoogleUser } from './auth.service';
+import { registerUser, loginUser, getUserById, upsertGoogleUser,
+         checkLoginLockout, recordLoginFailure, clearLoginCounters } from './auth.service';
 import { authenticate } from './auth.middleware';
 import { redis } from '../../queue/queue';
 import { config } from '../../config';
@@ -38,10 +39,19 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     return;
   }
 
+  const ip = (req.ip ?? '').replace(/^::ffff:/, '');
+  const email = parsed.data.email.toLowerCase();
+
   try {
-    const result = await loginUser(parsed.data.email, parsed.data.password);
+    await checkLoginLockout(ip, email);
+    const result = await loginUser(email, parsed.data.password);
+    await clearLoginCounters(ip, email);   // reset on success
     res.json(result);
   } catch (err: any) {
+    // Record failure only for credential errors, not lockouts
+    if (err.status === 401) {
+      await recordLoginFailure(ip, email);
+    }
     res.status(err.status || 500).json({ error: err.message });
   }
 });
