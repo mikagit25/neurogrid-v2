@@ -19,6 +19,12 @@ const registerSchema = z.object({
   password: z.string().min(8),
 });
 
+// Login schema — no min-length on password so lockout runs before Zod rejects
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
 authRouter.post('/register', async (req: Request, res: Response) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -35,7 +41,7 @@ authRouter.post('/register', async (req: Request, res: Response) => {
 });
 
 authRouter.post('/login', async (req: Request, res: Response) => {
-  const parsed = registerSchema.safeParse(req.body);
+  const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Validation error', details: parsed.error.flatten() });
     return;
