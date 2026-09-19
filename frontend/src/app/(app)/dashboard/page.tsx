@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getRuns, getScenarios } from '@/lib/api';
+import { getRuns, getScenarios, getConnections, getProducts } from '@/lib/api';
 import { getUser } from '@/lib/auth';
-import type { Run, Scenario } from '@/lib/api';
+import type { Run, Scenario, Connection, ProductSummary } from '@/lib/api';
 
 const STATUS_LABELS: Record<string, string> = {
   queued: 'В очереди',
@@ -40,18 +40,28 @@ function formatDate(dateStr: string) {
 export default function DashboardPage() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [productSummary, setProductSummary] = useState<ProductSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const user = getUser();
 
   useEffect(() => {
     async function load() {
       try {
-        const [runsData, scenariosData] = await Promise.all([
+        const [runsData, scenariosData, connsData] = await Promise.all([
           getRuns(20),
           getScenarios(),
+          getConnections(),
         ]);
         setRuns(runsData);
         setScenarios(scenariosData);
+        setConnections(connsData);
+        if (connsData.length > 0) {
+          try {
+            const { summary } = await getProducts(undefined, 50);
+            setProductSummary(summary);
+          } catch { /* no products yet */ }
+        }
       } catch {
         // Ignore
       } finally {
@@ -74,6 +84,64 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold text-slate-900">Дашборд</h1>
         <p className="text-slate-500 mt-1">Добро пожаловать в NeuroGrid</p>
       </div>
+
+      {/* Onboarding steps for new users */}
+      {!loading && connections.length === 0 && (
+        <div className="bg-gradient-to-br from-purple-600 to-purple-800 rounded-2xl p-6 text-white">
+          <h2 className="font-bold text-lg mb-1">Начните за 3 шага</h2>
+          <p className="text-purple-200 text-sm mb-5">Первый результат — через 2 минуты после подключения магазина</p>
+          <div className="grid sm:grid-cols-3 gap-4">
+            {[
+              { n: '1', title: 'Подключите магазин', desc: 'API-ключ WB или Ozon', href: '/connections', cta: 'Подключить →' },
+              { n: '2', title: 'Откройте каталог', desc: 'Увидите Listing Score каждого товара', href: '/products', cta: 'Каталог →' },
+              { n: '3', title: 'Включите агентов', desc: 'Автоответы, мониторинг цен, SEO', href: '/automations', cta: 'Автоматизации →' },
+            ].map((s) => (
+              <Link key={s.n} href={s.href} className="bg-white/10 hover:bg-white/20 rounded-xl p-4 transition-colors block">
+                <div className="w-7 h-7 rounded-full bg-white/20 text-white text-xs font-bold flex items-center justify-center mb-3">{s.n}</div>
+                <p className="font-semibold text-sm">{s.title}</p>
+                <p className="text-purple-200 text-xs mt-0.5 mb-3">{s.desc}</p>
+                <span className="text-xs font-medium text-purple-200 hover:text-white">{s.cta}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Product quality card */}
+      {productSummary && productSummary.total > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="font-semibold text-slate-800">Качество каталога</h2>
+              <p className="text-sm text-slate-500 mt-0.5">{productSummary.total} товаров · средний балл {productSummary.avgScore}/100</p>
+            </div>
+            <Link href="/products" className="text-sm text-purple-600 hover:text-purple-700 font-medium">Открыть каталог →</Link>
+          </div>
+          <div className="flex gap-1 h-3 rounded-full overflow-hidden mb-3">
+            {productSummary.poor > 0 && <div className="bg-red-400" style={{ flex: productSummary.poor }} />}
+            {productSummary.average > 0 && <div className="bg-amber-400" style={{ flex: productSummary.average }} />}
+            {productSummary.good > 0 && <div className="bg-blue-400" style={{ flex: productSummary.good }} />}
+            {productSummary.excellent > 0 && <div className="bg-green-400" style={{ flex: productSummary.excellent }} />}
+          </div>
+          <div className="flex gap-4 text-xs text-slate-500">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block" />{productSummary.poor} плохих</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />{productSummary.average} средних</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />{productSummary.good} хороших</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400 inline-block" />{productSummary.excellent} отличных</span>
+          </div>
+          {productSummary.poor + productSummary.average > 0 && (
+            <Link
+              href="/products?filter=poor"
+              className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-xl hover:bg-purple-700 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              Улучшить {productSummary.poor + productSummary.average} товаров с AI
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* Stats cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

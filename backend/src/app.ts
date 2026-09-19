@@ -12,6 +12,7 @@ import { billingRouter } from './modules/billing/billing.routes';
 import { notificationsRouter } from './modules/notifications/notifications.routes';
 import { adminRouter } from './modules/admin/admin.routes';
 import { automationsRouter } from './modules/automations/automations.routes';
+import { productsRouter } from './modules/products/products.routes';
 import { startWorker } from './queue/queue';
 import { processScenarioJob } from './queue/workers/scenario.worker';
 import { startAutomationWorker } from './queue/workers/automation.worker';
@@ -41,6 +42,7 @@ app.use('/api/wallet', billingRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/automations', automationsRouter);
+app.use('/api/products', productsRouter);
 
 // Serve generated images (infographics, AI photos)
 app.use('/images', express.static(path.join(__dirname, '../public/images')));

@@ -251,6 +251,40 @@ export async function markNotificationRead(id: string): Promise<void> {
   await apiFetch(`/api/notifications/${id}/read`, { method: 'POST' });
 }
 
+// ---- Products ----
+
+export interface ScoredProduct {
+  sku: string;
+  title: string;
+  price: number;
+  stock: number;
+  description?: string;
+  score: number;
+  scoreLabel: 'excellent' | 'good' | 'average' | 'poor';
+  issues: string[];
+  platform: 'wb' | 'ozon';
+  connectionId: string;
+}
+
+export interface ProductSummary {
+  total: number;
+  poor: number;
+  average: number;
+  good: number;
+  excellent: number;
+  avgScore: number;
+}
+
+export async function getProducts(connectionId?: string, limit?: number): Promise<{ products: ScoredProduct[]; summary: ProductSummary }> {
+  const params = new URLSearchParams();
+  if (connectionId) params.set('connectionId', connectionId);
+  if (limit) params.set('limit', String(limit));
+  const qs = params.toString() ? `?${params}` : '';
+  const res = await apiFetch(`/api/products${qs}`);
+  if (!res.ok) throw new Error('Не удалось загрузить товары');
+  return res.json();
+}
+
 // ---- Automations ----
 
 export interface Automation {
