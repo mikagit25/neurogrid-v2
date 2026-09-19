@@ -34,6 +34,9 @@ export async function loginUser(email: string, password: string) {
   }
 
   const user = rows[0];
+  if (!user.password_hash) {
+    throw Object.assign(new Error('This account uses Google Sign-In'), { status: 401 });
+  }
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) {
     throw Object.assign(new Error('Invalid credentials'), { status: 401 });
