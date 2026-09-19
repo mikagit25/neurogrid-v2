@@ -11,8 +11,10 @@ import { runsRouter } from './modules/runs/runs.routes';
 import { billingRouter } from './modules/billing/billing.routes';
 import { notificationsRouter } from './modules/notifications/notifications.routes';
 import { adminRouter } from './modules/admin/admin.routes';
+import { automationsRouter } from './modules/automations/automations.routes';
 import { startWorker } from './queue/queue';
 import { processScenarioJob } from './queue/workers/scenario.worker';
+import { startAutomationWorker } from './queue/workers/automation.worker';
 
 const app = express();
 
@@ -38,14 +40,16 @@ app.use('/api/runs', runsRouter);
 app.use('/api/wallet', billingRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/automations', automationsRouter);
 
 // Serve generated images (infographics, AI photos)
 app.use('/images', express.static(path.join(__dirname, '../public/images')));
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
 
-// Start BullMQ worker in the same process (fine for MVP scale)
+// Start BullMQ workers
 startWorker(processScenarioJob);
+startAutomationWorker();
 
 app.listen(config.port, () => {
   console.log(`NeuroGrid backend :${config.port} [${config.nodeEnv}]`);

@@ -113,12 +113,25 @@ export class WbAdapter implements MarketplaceAdapter {
   }
 
   async updateProductContent(sku: string, title: string, description: string): Promise<void> {
-    // WB content update requires full card object — fetch first, then patch
-    const product = await this.getProduct(sku);
     await this.contentClient.post('/api/v1/cards/update', [{
       nmID: parseInt(sku, 10),
       title,
       description,
     }]);
+  }
+
+  async postReviewResponse(reviewId: string, text: string): Promise<void> {
+    await this.contentClient.patch('/api/v1/feedbacks', {
+      id: reviewId,
+      text,
+    });
+  }
+
+  async getStockLevels(): Promise<{ sku: string; stock: number }[]> {
+    const resp = await this.contentClient.get('/api/v3/stocks', {
+      params: { dateFrom: new Date(Date.now() - 86400_000).toISOString() },
+    });
+    const stocks: any[] = resp.data.stocks ?? [];
+    return stocks.map((s: any) => ({ sku: String(s.nmId), stock: s.quantity ?? 0 }));
   }
 }

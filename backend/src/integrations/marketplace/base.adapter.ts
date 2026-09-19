@@ -37,4 +37,6 @@ export interface MarketplaceAdapter {
 
   updatePrice(sku: string, price: number): Promise<void>;
   updateProductContent(sku: string, title: string, description: string): Promise<void>;
+  postReviewResponse(reviewId: string, text: string): Promise<void>;
+  getStockLevels(): Promise<{ sku: string; stock: number }[]>;
 }

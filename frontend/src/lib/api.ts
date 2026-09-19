@@ -251,6 +251,72 @@ export async function markNotificationRead(id: string): Promise<void> {
   await apiFetch(`/api/notifications/${id}/read`, { method: 'POST' });
 }
 
+// ---- Automations ----
+
+export interface Automation {
+  id: string;
+  scenario_slug: string;
+  connection_id: string | null;
+  enabled: boolean;
+  schedule: 'hourly' | 'daily' | 'weekly';
+  auto_apply: boolean;
+  settings: Record<string, unknown>;
+  last_run_at: string | null;
+  last_run_status: string | null;
+  created_at: string;
+  connection_platform?: string;
+  connection_name?: string;
+}
+
+export async function getAutomations(): Promise<Automation[]> {
+  const res = await apiFetch('/api/automations');
+  if (!res.ok) throw new Error('Не удалось загрузить автоматизации');
+  return (await res.json()).automations;
+}
+
+export async function upsertAutomation(data: {
+  scenarioSlug: string;
+  connectionId?: string | null;
+  enabled?: boolean;
+  schedule?: string;
+  auto_apply?: boolean;
+  settings?: Record<string, unknown>;
+}): Promise<Automation> {
+  const res = await apiFetch('/api/automations', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'Ошибка сохранения');
+  }
+  return (await res.json()).automation;
+}
+
+export async function updateAutomation(
+  id: string,
+  data: Partial<Pick<Automation, 'enabled' | 'schedule' | 'auto_apply' | 'settings'>>
+): Promise<Automation> {
+  const res = await apiFetch(`/api/automations/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'Ошибка обновления');
+  }
+  return (await res.json()).automation;
+}
+
+export async function deleteAutomation(id: string): Promise<void> {
+  await apiFetch(`/api/automations/${id}`, { method: 'DELETE' });
+}
+
+export async function triggerAutomation(id: string): Promise<void> {
+  const res = await apiFetch(`/api/automations/${id}/run`, { method: 'POST' });
+  if (!res.ok) throw new Error('Не удалось запустить');
+}
+
 // ---- Admin ----
 
 export async function adminGetUsers(): Promise<AdminUser[]> {

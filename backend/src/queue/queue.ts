@@ -2,7 +2,8 @@ import { Queue, Worker, Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { config } from '../config';
 
-const connection = new IORedis(config.redis.url, { maxRetriesPerRequest: null });
+export const redis = new IORedis(config.redis.url, { maxRetriesPerRequest: null });
+const connection = redis;
 
 export const scenarioQueue = new Queue('scenario-runs', { connection });
 

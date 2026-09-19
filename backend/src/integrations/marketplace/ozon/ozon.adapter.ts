@@ -144,4 +144,23 @@ export class OzonAdapter implements MarketplaceAdapter {
       description,
     });
   }
+
+  async postReviewResponse(reviewId: string, text: string): Promise<void> {
+    await this.client.post('/v1/review/comment/create', {
+      review_id: reviewId,
+      comment: text,
+    });
+  }
+
+  async getStockLevels(): Promise<{ sku: string; stock: number }[]> {
+    const resp = await this.client.post('/v3/product/info/stocks', {
+      filter: { visibility: 'ALL' },
+      last_id: '',
+      limit: 1000,
+    });
+    return (resp.data.result?.items ?? []).map((i: any) => ({
+      sku: String(i.product_id),
+      stock: i.stocks?.find((s: any) => s.type === 'fbo')?.present ?? 0,
+    }));
+  }
 }
