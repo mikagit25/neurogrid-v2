@@ -4,6 +4,8 @@ import { PriceMonitorExecutor } from './price-monitor';
 import { ReviewDraftsExecutor } from './review-drafts';
 import { StockForecastExecutor } from './stock-forecast';
 import { SeoAuditExecutor } from './seo-audit';
+import { PhotoGeneratorExecutor } from './photo-generator';
+import { InfographicGeneratorExecutor } from './infographic-generator';
 
 const executors: ScenarioExecutor[] = [
   new CardGeneratorExecutor(),
@@ -11,6 +13,8 @@ const executors: ScenarioExecutor[] = [
   new ReviewDraftsExecutor(),
   new StockForecastExecutor(),
   new SeoAuditExecutor(),
+  new PhotoGeneratorExecutor(),
+  new InfographicGeneratorExecutor(),
 ];
 
 const registry = new Map<string, ScenarioExecutor>(

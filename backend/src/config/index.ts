@@ -40,4 +40,10 @@ export const config = {
     secretKey: process.env.BEPAID_SECRET_KEY || '',
     sandbox: process.env.BEPAID_SANDBOX === 'true',
   },
+
+  image: {
+    provider: process.env.IMAGE_PROVIDER || 'together',
+    apiKey: process.env.IMAGE_API_KEY || '',
+    defaultModel: process.env.IMAGE_MODEL || 'black-forest-labs/FLUX.1.1-pro',
+  },
 };

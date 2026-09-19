@@ -1,4 +1,5 @@
 import express from 'express';
+import path from 'path';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -30,6 +31,9 @@ app.use('/api/runs', runsRouter);
 app.use('/api/wallet', billingRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/admin', adminRouter);
+
+// Serve generated images (infographics, AI photos)
+app.use('/images', express.static(path.join(__dirname, '../public/images')));
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
 

@@ -42,7 +42,7 @@ export async function processScenarioJob(job: Job<ScenarioJobData>): Promise<voi
 
     // Execute scenario
     const executor = getExecutor(scenarioSlug);
-    const result = await executor.execute({ adapter, inputData });
+    const result = await executor.execute({ adapter, inputData: { ...inputData, _runId: runId } });
 
     // Commit result + deduct balance atomically
     await db.query('BEGIN');
