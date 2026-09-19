@@ -64,6 +64,39 @@ adminRouter.post('/runs/:id/retry', async (req: Request, res: Response) => {
   res.json({ ok: true, runId: run.id });
 });
 
+// Manual balance adjustment (credit or debit)
+adminRouter.post('/users/:id/balance', async (req: Request, res: Response) => {
+  const amount = Number(req.body.amount);
+  const note = String(req.body.note ?? 'manual adjustment');
+  if (!amount || isNaN(amount)) {
+    res.status(400).json({ error: 'amount must be a non-zero number' });
+    return;
+  }
+
+  await db.query('BEGIN');
+  try {
+    const { rows } = await db.query(
+      'UPDATE users SET balance = balance + $1 WHERE id = $2 RETURNING balance',
+      [amount, req.params.id]
+    );
+    if (!rows.length) {
+      await db.query('ROLLBACK');
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    await db.query(
+      `INSERT INTO transactions (user_id, type, amount, provider_id)
+       VALUES ($1, 'topup', $2, $3)`,
+      [req.params.id, Math.abs(amount), `admin:${note}`]
+    );
+    await db.query('COMMIT');
+    res.json({ ok: true, newBalance: rows[0].balance });
+  } catch (err) {
+    await db.query('ROLLBACK');
+    throw err;
+  }
+});
+
 // Toggle scenario active state
 adminRouter.patch('/scenarios/:id', async (req: Request, res: Response) => {
   const { is_active } = req.body;

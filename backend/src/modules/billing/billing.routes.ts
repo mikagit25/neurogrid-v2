@@ -1,8 +1,23 @@
 import { Router, Request, Response } from 'express';
 import { authenticate } from '../auth/auth.middleware';
 import { db } from '../../db';
+import { initiateTopup, processWebhook, getTopupRequests } from './billing.service';
 
 export const billingRouter = Router();
+
+// Public — bePaid webhook (no JWT)
+billingRouter.post('/webhook/bepaid', async (req: Request, res: Response) => {
+  try {
+    await processWebhook(req.body);
+    // bePaid expects HTTP 200; any other code triggers retries
+    res.status(200).json({ status: 'ok' });
+  } catch (err) {
+    console.error('[bepaid webhook]', err);
+    res.status(200).json({ status: 'error' }); // still 200 to stop retries
+  }
+});
+
+// Authenticated routes
 billingRouter.use(authenticate);
 
 billingRouter.get('/transactions', async (req: Request, res: Response) => {
@@ -15,18 +30,18 @@ billingRouter.get('/transactions', async (req: Request, res: Response) => {
   res.json({ transactions: rows });
 });
 
-// bePaid topup — placeholder until bePaid credentials are configured
+billingRouter.get('/topups', async (req: Request, res: Response) => {
+  const topups = await getTopupRequests(req.user!.userId);
+  res.json({ topups });
+});
+
 billingRouter.post('/topup', async (req: Request, res: Response) => {
   const amount = Number(req.body.amount);
-  if (!amount || amount < 100 || amount > 100_000) {
-    res.status(400).json({ error: 'amount must be between 100 and 100000' });
-    return;
+  try {
+    const result = await initiateTopup(req.user!.userId, amount);
+    res.json(result);
+  } catch (err: unknown) {
+    const e = err as Error & { status?: number };
+    res.status(e.status ?? 500).json({ error: e.message });
   }
-
-  // TODO Sprint 3: integrate bePaid — create payment page, return redirect URL
-  // For now return a placeholder so the route exists and can be tested end-to-end
-  res.status(501).json({
-    error: 'Payment provider not yet configured',
-    message: 'bePaid integration is scheduled for Sprint 3. Contact support to top up manually.',
-  });
 });
