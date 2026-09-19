@@ -20,8 +20,10 @@ app.use(helmet());
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json({ limit: '1mb' }));
 
-// Stricter rate limit on auth endpoints
-app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }));
+// Strict rate limit only on unauthenticated auth actions (login/register)
+const authActionLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+app.use('/api/auth/login', authActionLimiter);
+app.use('/api/auth/register', authActionLimiter);
 app.use('/api', rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }));
 
 app.use('/api/auth', authRouter);

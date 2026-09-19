@@ -238,9 +238,9 @@ export default function WalletPage() {
                         )}
                       </td>
                       <td className={`px-5 py-3 font-medium ${
-                        tx.amount < 0 ? 'text-red-600' : 'text-green-600'
+                        tx.type === 'charge' ? 'text-red-600' : 'text-green-600'
                       }`}>
-                        {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString('ru-RU')} ₽
+                        {tx.type === 'charge' ? '−' : '+'}{Number(tx.amount).toLocaleString('ru-RU')} ₽
                       </td>
                       <td className="px-5 py-3 text-slate-500">{formatDate(tx.created_at)}</td>
                     </tr>
@@ -267,7 +267,7 @@ export default function WalletPage() {
                   {topups.map((t) => (
                     <tr key={t.id} className="hover:bg-slate-50/50">
                       <td className="px-5 py-3 font-medium text-slate-800">
-                        {t.amount.toLocaleString('ru-RU')} {t.currency}
+                        {Number(t.amount).toLocaleString('ru-RU')} {t.currency}
                       </td>
                       <td className="px-5 py-3 text-slate-500">{t.currency}</td>
                       <td className="px-5 py-3">

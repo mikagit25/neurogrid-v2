@@ -130,13 +130,18 @@ export async function login(email: string, password: string): Promise<{ token: s
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || 'Неверный email или пароль');
   }
-  return res.json();
+  const data = await res.json();
+  if (data.user) data.user.balance = Number(data.user.balance ?? 0);
+  return data;
 }
 
 export async function getMe(): Promise<{ user: User }> {
   const res = await apiFetch('/api/auth/me');
   if (!res.ok) throw new Error('Не удалось загрузить профиль');
-  return res.json();
+  const data = await res.json();
+  // Postgres NUMERIC comes back as a string — coerce to number
+  if (data.user) data.user.balance = Number(data.user.balance ?? 0);
+  return data;
 }
 
 // ---- Scenarios ----
