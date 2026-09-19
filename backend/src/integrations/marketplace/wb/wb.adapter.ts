@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { MarketplaceAdapter, ProductInfo, CompetitorPrice, ReviewOrQuestion } from '../base.adapter';
+import { MarketplaceAdapter, ProductInfo, CompetitorPrice, ReviewOrQuestion, SalesDay, FinanceSummary, MarketplaceOrder } from '../base.adapter';
 
 export interface WbCredentials {
   apiKey: string;
@@ -19,15 +19,29 @@ export class WbAdapter implements MarketplaceAdapter {
 
   private contentClient: AxiosInstance;
   private statisticsClient: AxiosInstance;
+  private marketplaceClient: AxiosInstance;
+  private analyticsClient: AxiosInstance;
 
   constructor(private credentials: WbCredentials) {
     this.contentClient = axios.create({
       baseURL: 'https://content-api.wildberries.ru',
       headers: { Authorization: credentials.apiKey },
+      timeout: 30_000,
     });
     this.statisticsClient = axios.create({
       baseURL: 'https://statistics-api.wildberries.ru',
       headers: { Authorization: credentials.statisticsApiKey || credentials.apiKey },
+      timeout: 30_000,
+    });
+    this.marketplaceClient = axios.create({
+      baseURL: 'https://marketplace-api.wildberries.ru',
+      headers: { Authorization: credentials.apiKey },
+      timeout: 30_000,
+    });
+    this.analyticsClient = axios.create({
+      baseURL: 'https://seller-analytics-api.wildberries.ru',
+      headers: { Authorization: credentials.apiKey },
+      timeout: 30_000,
     });
   }
 
@@ -139,5 +153,146 @@ export class WbAdapter implements MarketplaceAdapter {
     });
     const stocks: any[] = resp.data.stocks ?? [];
     return stocks.map((s: any) => ({ sku: String(s.nmId), stock: s.quantity ?? 0 }));
+  }
+
+  // ---- Analytics ----
+
+  async getSalesByDay(dateFrom: string, dateTo: string): Promise<SalesDay[]> {
+    try {
+      // WB detailed report — covers all operation types per sale_dt
+      const resp = await this.statisticsClient.get('/api/v5/supplier/reportDetailByPeriod', {
+        params: { dateFrom, dateTo, limit: 100000, rrdid: 0 },
+      });
+      const rows: any[] = resp.data ?? [];
+      const daily: Record<string, SalesDay> = {};
+
+      for (const row of rows) {
+        const date = (row.sale_dt ?? row.rr_dt ?? '').slice(0, 10);
+        if (!date) continue;
+        if (!daily[date]) daily[date] = { date, revenue: 0, orders: 0, returns: 0, commissions: 0, netPayout: 0 };
+        const type: string = row.supplier_oper_name ?? '';
+        if (type === 'Продажа') {
+          daily[date].revenue += row.retail_price_withdisc_rub ?? 0;
+          daily[date].orders += row.quantity ?? 1;
+          daily[date].commissions += Math.abs(row.ppvz_sales_commission ?? row.ppvz_kvw_prc ?? 0);
+          daily[date].netPayout += row.ppvz_for_pay ?? 0;
+        } else if (type === 'Возврат') {
+          daily[date].returns += row.quantity ?? 1;
+          daily[date].netPayout -= Math.abs(row.ppvz_for_pay ?? 0);
+        } else if (type === 'Штраф' || type.includes('штраф')) {
+          daily[date].netPayout -= Math.abs(row.ppvz_for_pay ?? 0);
+        }
+      }
+      return Object.values(daily).sort((a, b) => a.date.localeCompare(b.date));
+    } catch {
+      return [];
+    }
+  }
+
+  async getFinanceSummary(dateFrom: string, dateTo: string): Promise<FinanceSummary> {
+    try {
+      const resp = await this.statisticsClient.get('/api/v5/supplier/reportDetailByPeriod', {
+        params: { dateFrom, dateTo, limit: 100000, rrdid: 0 },
+      });
+      const rows: any[] = resp.data ?? [];
+      let revenue = 0, commissions = 0, logistics = 0, penalties = 0, netPayout = 0;
+      for (const row of rows) {
+        const type: string = row.supplier_oper_name ?? '';
+        if (type === 'Продажа') {
+          revenue += row.retail_price_withdisc_rub ?? 0;
+          commissions += Math.abs(row.ppvz_sales_commission ?? 0);
+          netPayout += row.ppvz_for_pay ?? 0;
+        } else if (type === 'Логистика') {
+          logistics += Math.abs(row.delivery_rub ?? 0);
+        } else if (type === 'Возврат') {
+          netPayout -= Math.abs(row.ppvz_for_pay ?? 0);
+        } else if (type === 'Штраф' || type.includes('штраф')) {
+          penalties += Math.abs(row.ppvz_for_pay ?? 0);
+          netPayout -= Math.abs(row.ppvz_for_pay ?? 0);
+        }
+      }
+      return { revenue, commissions, logistics, penalties, netPayout };
+    } catch {
+      return { revenue: 0, commissions: 0, logistics: 0, penalties: 0, netPayout: 0 };
+    }
+  }
+
+  // ---- Orders (FBS) ----
+
+  async getNewOrders(): Promise<MarketplaceOrder[]> {
+    try {
+      const resp = await this.marketplaceClient.get('/api/v3/orders/new');
+      return this._mapWbOrders(resp.data?.orders ?? [], 'new');
+    } catch {
+      return [];
+    }
+  }
+
+  async getAllOrders(dateFrom?: string): Promise<MarketplaceOrder[]> {
+    try {
+      const since = dateFrom ?? new Date(Date.now() - 7 * 86400_000).toISOString();
+      const resp = await this.marketplaceClient.get('/api/v3/orders', {
+        params: { dateStart: since, status: 0 },
+      });
+      return this._mapWbOrders(resp.data?.orders ?? [], 'all');
+    } catch {
+      return [];
+    }
+  }
+
+  private _mapWbOrders(orders: any[], status: string): MarketplaceOrder[] {
+    return orders.map((o: any) => ({
+      id: String(o.id),
+      platform: 'wb' as const,
+      status: o.wbStatus ?? status,
+      createdAt: o.createdAt ?? new Date().toISOString(),
+      items: [{
+        sku: String(o.nmId ?? ''),
+        offerId: o.article ?? '',
+        title: o.article ?? String(o.nmId ?? ''),
+        quantity: 1,
+        price: Math.round((o.price ?? 0) / 100),
+      }],
+      warehouseId: o.warehouseId,
+      warehouseName: (o.offices ?? [])[0] ?? '',
+      nmId: o.nmId,
+    }));
+  }
+
+  // ---- Supply management (WB-specific) ----
+
+  async createSupply(name: string): Promise<string> {
+    const resp = await this.marketplaceClient.post('/api/v3/supplies', { name });
+    return resp.data?.id ?? '';
+  }
+
+  async addOrdersToSupply(supplyId: string, orderIds: string[]): Promise<void> {
+    for (const orderId of orderIds) {
+      await this.marketplaceClient.put(`/api/v3/supplies/${supplyId}/orders/${orderId}`);
+    }
+  }
+
+  async closeSupply(supplyId: string): Promise<void> {
+    await this.marketplaceClient.patch(`/api/v3/supplies/${supplyId}/close`);
+  }
+
+  async getSupplyBarcode(supplyId: string): Promise<string> {
+    const resp = await this.marketplaceClient.get(`/api/v3/supplies/${supplyId}/barcode`, {
+      headers: { Accept: 'application/png' },
+      responseType: 'arraybuffer',
+    });
+    return Buffer.from(resp.data as ArrayBuffer).toString('base64');
+  }
+
+  async getOrderStickers(orderIds: string[]): Promise<{ orderId: string; barcodeBase64: string }[]> {
+    const resp = await this.marketplaceClient.post(
+      '/api/v3/orders/stickers',
+      { orders: orderIds.map(Number) },
+      { params: { type: 'png', width: 58, height: 40 } }
+    );
+    return (resp.data?.stickers ?? []).map((s: any) => ({
+      orderId: String(s.orderId),
+      barcodeBase64: s.barcodeBase64 ?? '',
+    }));
   }
 }

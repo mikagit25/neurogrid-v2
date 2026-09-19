@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { MarketplaceAdapter, ProductInfo, CompetitorPrice, ReviewOrQuestion } from '../base.adapter';
+import { MarketplaceAdapter, ProductInfo, CompetitorPrice, ReviewOrQuestion, SalesDay, FinanceSummary, MarketplaceOrder } from '../base.adapter';
 
 export interface OzonCredentials {
   clientId: string;
@@ -166,5 +166,139 @@ export class OzonAdapter implements MarketplaceAdapter {
       sku: String(i.product_id),
       stock: i.stocks?.find((s: any) => s.type === 'fbo')?.present ?? 0,
     }));
+  }
+
+  // ---- Analytics ----
+
+  async getSalesByDay(dateFrom: string, dateTo: string): Promise<SalesDay[]> {
+    try {
+      const resp = await this.client.post('/v1/analytics/data', {
+        date_from: dateFrom,
+        date_to: dateTo,
+        metrics: ['revenue', 'ordered_units', 'returns', 'cancellations'],
+        dimension: ['day'],
+        filters: [],
+        limit: 1000,
+        offset: 0,
+        sort: [{ key: 'day', order: 'ASC' }],
+      });
+      return (resp.data?.result?.data ?? []).map((row: any) => {
+        const [revenue = 0, orders = 0, returns = 0] = row.metrics ?? [];
+        return {
+          date: row.dimensions?.[0]?.id ?? '',
+          revenue: Number(revenue),
+          orders: Number(orders),
+          returns: Number(returns),
+          commissions: 0,
+          netPayout: 0,
+        };
+      }).filter((d: SalesDay) => d.date);
+    } catch {
+      return [];
+    }
+  }
+
+  async getFinanceSummary(dateFrom: string, dateTo: string): Promise<FinanceSummary> {
+    try {
+      const resp = await this.client.post('/v1/finance/transaction/list', {
+        filter: {
+          date: { from: `${dateFrom}T00:00:00.000Z`, to: `${dateTo}T23:59:59.999Z` },
+          operation_type: [],
+          posting_number: '',
+          transaction_type: 'all',
+        },
+        page: 1,
+        page_size: 1000,
+      });
+      const ops: any[] = resp.data?.result?.operations ?? [];
+      let revenue = 0, commissions = 0, logistics = 0, penalties = 0;
+      for (const op of ops) {
+        const amount = Number(op.amount ?? 0);
+        const type: string = op.operation_type ?? '';
+        if (type === 'OperationAgentDeliveredToCustomer') revenue += amount;
+        else if (type.includes('MarketplaceServiceItemFulfillment') || type.includes('Commission')) commissions += Math.abs(amount);
+        else if (type.includes('Delivery') || type.includes('Logistic')) logistics += Math.abs(amount);
+        else if (type.includes('Penalty') || amount < 0) penalties += Math.abs(amount);
+      }
+      const netPayout = revenue - commissions - logistics - penalties;
+      return { revenue, commissions, logistics, penalties, netPayout };
+    } catch {
+      return { revenue: 0, commissions: 0, logistics: 0, penalties: 0, netPayout: 0 };
+    }
+  }
+
+  // ---- Orders ----
+
+  async getNewOrders(): Promise<MarketplaceOrder[]> {
+    return this._getFbsOrders('awaiting_packaging');
+  }
+
+  async getAllOrders(dateFrom?: string): Promise<MarketplaceOrder[]> {
+    const since = dateFrom ?? new Date(Date.now() - 7 * 86400_000).toISOString();
+    return this._getFbsOrders(undefined, since);
+  }
+
+  private async _getFbsOrders(status?: string, since?: string): Promise<MarketplaceOrder[]> {
+    try {
+      const filter: Record<string, any> = {
+        delivery_method_id: [],
+        provider_id: [],
+        since: since ?? new Date(Date.now() - 7 * 86400_000).toISOString(),
+        to: new Date().toISOString(),
+      };
+      if (status) filter.status = status;
+
+      const resp = await this.client.post('/v3/posting/fbs/list', {
+        dir: 'desc',
+        filter,
+        limit: 100,
+        offset: 0,
+        with: { analytics_data: false, barcodes: true, financial_data: false, translit: false },
+      });
+      return (resp.data?.result?.postings ?? []).map((p: any) => ({
+        id: p.posting_number,
+        platform: 'ozon' as const,
+        status: p.status,
+        createdAt: p.created_at ?? '',
+        items: (p.products ?? []).map((prod: any) => ({
+          sku: String(prod.sku),
+          offerId: prod.offer_id ?? '',
+          title: prod.name ?? '',
+          quantity: prod.quantity ?? 1,
+          price: parseFloat(prod.price ?? '0'),
+        })),
+        postingNumber: p.posting_number,
+        deliveryMethod: p.delivery_method?.name ?? '',
+        shipByDate: p.shipment_date ?? '',
+        upperBarcode: p.barcodes?.upper_barcode ?? '',
+        lowerBarcode: p.barcodes?.lower_barcode ?? '',
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  // ---- FBS-specific (Ozon only) ----
+
+  async shipFbsOrder(postingNumber: string, packages: Array<{ products: Array<{ sku: number; quantity: number }> }>): Promise<void> {
+    await this.client.post('/v2/posting/fbs/ship', { posting_number: postingNumber, packages });
+  }
+
+  async getFbsLabel(postingNumbers: string[]): Promise<string> {
+    const resp = await this.client.post(
+      '/v2/posting/fbs/package-label',
+      { posting_number: postingNumbers },
+      { responseType: 'arraybuffer' }
+    );
+    return Buffer.from(resp.data as ArrayBuffer).toString('base64');
+  }
+
+  async getProductSticker(postingNumber: string, skus: number[]): Promise<string> {
+    const resp = await this.client.post(
+      '/v1/posting/fbs/product/sticker/pdf',
+      { posting_number: postingNumber, products: skus.map(id => ({ product_id: id, quantity: 1 })) },
+      { responseType: 'arraybuffer' }
+    );
+    return Buffer.from(resp.data as ArrayBuffer).toString('base64');
   }
 }

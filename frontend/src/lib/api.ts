@@ -541,3 +541,132 @@ export async function adminToggleScenario(
   if (!res.ok) throw new Error('Не удалось обновить сценарий');
   return res.json();
 }
+
+// ---- Analytics ----
+
+export interface SalesDayChart {
+  date: string;
+  wb: number;
+  ozon: number;
+  total: number;
+}
+
+export interface PlatformMetrics {
+  revenue: number;
+  orders: number;
+  returns: number;
+  netPayout: number;
+}
+
+export interface StockAlert {
+  sku: string;
+  title: string;
+  stock: number;
+  platform: 'wb' | 'ozon';
+  level: 'critical' | 'low';
+}
+
+export interface AnalyticsSummary {
+  period: string;
+  dateFrom: string;
+  dateTo: string;
+  summary: {
+    totalRevenue: number;
+    totalOrders: number;
+    totalReturns: number;
+    totalNetPayout: number;
+    returnRate: number;
+  };
+  byPlatform: {
+    wb: PlatformMetrics;
+    ozon: PlatformMetrics;
+  };
+  chart: SalesDayChart[];
+  stockAlerts: StockAlert[];
+  connections: { id: string; name: string; platform: string }[];
+}
+
+export async function getAnalyticsSummary(period: '7d' | '30d' | '90d' = '30d'): Promise<AnalyticsSummary> {
+  const res = await apiFetch(`/api/analytics/summary?period=${period}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Не удалось загрузить аналитику');
+  }
+  return res.json();
+}
+
+export async function invalidateAnalyticsCache(): Promise<void> {
+  await apiFetch('/api/analytics/cache', { method: 'DELETE' });
+}
+
+// ---- Orders ----
+
+export interface OrderLine {
+  sku: string;
+  offerId: string;
+  title: string;
+  quantity: number;
+  price: number;
+}
+
+export interface MarketplaceOrder {
+  id: string;
+  platform: 'wb' | 'ozon';
+  status: string;
+  createdAt: string;
+  items: OrderLine[];
+  connectionId: string;
+  connectionName: string;
+  // WB
+  warehouseId?: number;
+  warehouseName?: string;
+  nmId?: number;
+  // Ozon
+  postingNumber?: string;
+  deliveryMethod?: string;
+  shipByDate?: string;
+  upperBarcode?: string;
+  lowerBarcode?: string;
+}
+
+export async function getOrders(status: 'new' | 'all' = 'new', connectionId?: string): Promise<{ orders: MarketplaceOrder[]; total: number }> {
+  const params = new URLSearchParams({ status });
+  if (connectionId) params.set('connectionId', connectionId);
+  const res = await apiFetch(`/api/orders?${params}`);
+  if (!res.ok) throw new Error('Не удалось загрузить заказы');
+  return res.json();
+}
+
+export async function createWbSupply(data: { connectionId: string; orderIds: string[]; supplyName?: string }): Promise<{ supplyId: string; name: string }> {
+  const res = await apiFetch('/api/orders/wb/supply', { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'Ошибка создания поставки'); }
+  return res.json();
+}
+
+export async function getWbSupplyBarcode(supplyId: string, connectionId: string): Promise<{ barcode: string }> {
+  const res = await apiFetch(`/api/orders/wb/supply/${supplyId}/barcode?connectionId=${connectionId}`);
+  if (!res.ok) throw new Error('Ошибка получения штрихкода');
+  return res.json();
+}
+
+export async function getWbOrderStickers(data: { connectionId: string; orderIds: string[] }): Promise<{ stickers: { orderId: string; barcodeBase64: string }[] }> {
+  const res = await apiFetch('/api/orders/wb/stickers', { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'Ошибка получения наклеек'); }
+  return res.json();
+}
+
+export async function closeWbSupply(supplyId: string, connectionId: string): Promise<void> {
+  await apiFetch(`/api/orders/wb/supply/${supplyId}/close`, { method: 'POST', body: JSON.stringify({ connectionId }) });
+}
+
+export async function shipOzonOrder(data: { connectionId: string; postingNumber: string; packages?: unknown[] }): Promise<{ ok: boolean }> {
+  const res = await apiFetch('/api/orders/ozon/ship', { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'Ошибка отгрузки'); }
+  return res.json();
+}
+
+export async function getOzonLabel(data: { connectionId: string; postingNumbers: string[] }): Promise<{ pdf: string }> {
+  const res = await apiFetch('/api/orders/ozon/label', { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'Ошибка получения ярлыка'); }
+  return res.json();
+}

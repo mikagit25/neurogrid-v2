@@ -15,6 +15,8 @@ import { automationsRouter } from './modules/automations/automations.routes';
 import { productsRouter } from './modules/products/products.routes';
 import { uploadsRouter } from './modules/uploads/uploads.routes';
 import { autopilotRouter } from './modules/autopilot/autopilot.routes';
+import { analyticsRouter } from './modules/analytics/analytics.routes';
+import { ordersRouter } from './modules/orders/orders.routes';
 import { startWorker } from './queue/queue';
 import { processScenarioJob } from './queue/workers/scenario.worker';
 import { startAutomationWorker } from './queue/workers/automation.worker';
@@ -47,6 +49,8 @@ app.use('/api/automations', automationsRouter);
 app.use('/api/products', productsRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/autopilot', autopilotRouter);
+app.use('/api/analytics', analyticsRouter);
+app.use('/api/orders', ordersRouter);
 
 // Serve generated images (infographics, AI photos)
 app.use('/images', express.static(path.join(__dirname, '../public/images')));
