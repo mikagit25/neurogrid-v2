@@ -32,18 +32,43 @@ function formatDate(dateStr?: string) {
   });
 }
 
+function HintLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-purple-600 hover:text-purple-700 underline underline-offset-2"
+    >
+      {children}
+      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+      </svg>
+    </a>
+  );
+}
+
+function InfoBox({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex gap-2.5 p-3 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-800">
+      <svg className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <div className="leading-relaxed">{children}</div>
+    </div>
+  );
+}
+
 export default function ConnectionsPage() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
 
-  // Form state
   const [platform, setPlatform] = useState<'wb' | 'ozon'>('wb');
   const [displayName, setDisplayName] = useState('');
   const [wbApiKey, setWbApiKey] = useState('');
   const [wbStatsKey, setWbStatsKey] = useState('');
-  const [wbAdvertKey, setWbAdvertKey] = useState('');
   const [ozonClientId, setOzonClientId] = useState('');
   const [ozonApiKey, setOzonApiKey] = useState('');
   const [formError, setFormError] = useState('');
@@ -60,16 +85,13 @@ export default function ConnectionsPage() {
     }
   }
 
-  useEffect(() => {
-    loadConnections();
-  }, []);
+  useEffect(() => { loadConnections(); }, []);
 
   function resetForm() {
     setPlatform('wb');
     setDisplayName('');
     setWbApiKey('');
     setWbStatsKey('');
-    setWbAdvertKey('');
     setOzonClientId('');
     setOzonApiKey('');
     setFormError('');
@@ -90,11 +112,13 @@ export default function ConnectionsPage() {
 
     setFormLoading(true);
     try {
-      const data: Record<string, string> = { platform, ...(displayName.trim() && { displayName: displayName.trim() }) };
+      const data: Record<string, string> = {
+        platform,
+        ...(displayName.trim() && { displayName: displayName.trim() }),
+      };
       if (platform === 'wb') {
         data.apiKey = wbApiKey.trim();
         if (wbStatsKey.trim()) data.statisticsApiKey = wbStatsKey.trim();
-        if (wbAdvertKey.trim()) data.advertApiKey = wbAdvertKey.trim();
       } else {
         data.clientId = ozonClientId.trim();
         data.apiKey = ozonApiKey.trim();
@@ -136,87 +160,99 @@ export default function ConnectionsPage() {
             </div>
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
+
+            {/* Platform selector */}
             <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setPlatform('wb')}
-                className={`py-3 px-4 rounded-lg border-2 font-medium text-sm transition-colors ${
-                  platform === 'wb'
-                    ? 'border-purple-500 bg-purple-50 text-purple-700'
-                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                }`}
-              >
-                WildBerries
-              </button>
-              <button
-                type="button"
-                onClick={() => setPlatform('ozon')}
-                className={`py-3 px-4 rounded-lg border-2 font-medium text-sm transition-colors ${
-                  platform === 'ozon'
-                    ? 'border-purple-500 bg-purple-50 text-purple-700'
-                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                }`}
-              >
-                Ozon
-              </button>
+              {(['wb', 'ozon'] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPlatform(p)}
+                  className={`py-3 px-4 rounded-lg border-2 font-medium text-sm transition-colors ${
+                    platform === p
+                      ? 'border-purple-500 bg-purple-50 text-purple-700'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  {PLATFORM_LABELS[p]}
+                </button>
+              ))}
             </div>
 
+            {/* Display name */}
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Отображаемое название
+                Название магазина
               </label>
               <input
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Мой магазин WB"
+                placeholder={platform === 'wb' ? 'Мой магазин WB' : 'Мой магазин Ozon'}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
 
+            {/* WildBerries fields */}
             {platform === 'wb' && (
               <>
+                <InfoBox>
+                  Ключи создаются в личном кабинете WB:{' '}
+                  <HintLink href="https://seller.wildberries.ru/supplier-settings/access-to-new-api">
+                    Настройки → Доступ к API
+                  </HintLink>
+                  . Нажмите «Создать новый токен» и выберите права:{' '}
+                  <strong>Контент</strong> + <strong>Аналитика</strong> + <strong>Отзывы и вопросы</strong>.
+                  Один токен со всеми тремя правами заменяет оба поля ниже.
+                </InfoBox>
+
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    API-ключ WB <span className="text-red-500">*</span>
+                    API-ключ (токен) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="password"
                     value={wbApiKey}
                     onChange={(e) => setWbApiKey(e.target.value)}
-                    placeholder="eyJ..."
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9…"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-xs"
                   />
+                  <p className="mt-1 text-xs text-slate-400">
+                    Должны быть включены права: <strong>Контент</strong>, <strong>Аналитика</strong>, <strong>Отзывы и вопросы</strong>
+                  </p>
                 </div>
+
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Ключ статистики (необязательно)
+                    Токен статистики{' '}
+                    <span className="text-slate-400 font-normal">(если создали отдельно)</span>
                   </label>
                   <input
                     type="password"
                     value={wbStatsKey}
                     onChange={(e) => setWbStatsKey(e.target.value)}
-                    placeholder="eyJ..."
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9…"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-xs"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Ключ рекламы (необязательно)
-                  </label>
-                  <input
-                    type="password"
-                    value={wbAdvertKey}
-                    onChange={(e) => setWbAdvertKey(e.target.value)}
-                    placeholder="eyJ..."
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  />
+                  <p className="mt-1 text-xs text-slate-400">
+                    Отдельный токен с правом «Аналитика». Если не заполнено — используется основной токен.
+                  </p>
                 </div>
               </>
             )}
 
+            {/* Ozon fields */}
             {platform === 'ozon' && (
               <>
+                <InfoBox>
+                  Ключи создаются в личном кабинете Ozon Seller:{' '}
+                  <HintLink href="https://seller.ozon.ru/app/settings/api-keys">
+                    Настройки → API ключи
+                  </HintLink>
+                  . Нажмите «Создать ключ», тип — <strong>Admin</strong>.
+                  Client ID находится там же, в шапке страницы.
+                </InfoBox>
+
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Client ID <span className="text-red-500">*</span>
@@ -228,21 +264,37 @@ export default function ConnectionsPage() {
                     placeholder="123456"
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
+                  <p className="mt-1 text-xs text-slate-400">
+                    Числовой ID — виден в шапке страницы API ключей
+                  </p>
                 </div>
+
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    API-ключ Ozon <span className="text-red-500">*</span>
+                    API-ключ <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="password"
                     value={ozonApiKey}
                     onChange={(e) => setOzonApiKey(e.target.value)}
                     placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-xs"
                   />
+                  <p className="mt-1 text-xs text-slate-400">
+                    Тип ключа: <strong>Admin</strong> — нужен для товаров, аналитики и отзывов
+                  </p>
                 </div>
               </>
             )}
+
+            {/* Security note */}
+            <div className="flex items-start gap-2 text-xs text-slate-400 pt-1">
+              <svg className="w-4 h-4 mt-0.5 shrink-0 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              Ключи хранятся в зашифрованном виде (AES-256) и не передаются третьим лицам.
+              NeuroGrid работает только на чтение — цены и карточки изменяются только по вашей команде.
+            </div>
 
             <div className="flex gap-3 pt-1">
               <button
@@ -250,7 +302,7 @@ export default function ConnectionsPage() {
                 disabled={formLoading}
                 className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
               >
-                {formLoading ? 'Сохранение...' : 'Добавить подключение'}
+                {formLoading ? 'Проверка и сохранение...' : 'Подключить'}
               </button>
               <button
                 type="button"
@@ -280,7 +332,7 @@ export default function ConnectionsPage() {
               </svg>
             </div>
             <p className="text-slate-500 text-sm">Подключений пока нет</p>
-            <p className="text-slate-400 text-xs mt-1">Добавьте подключение для использования сценариев</p>
+            <p className="text-slate-400 text-xs mt-1">Добавьте API-ключ магазина, чтобы использовать сценарии</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
@@ -288,7 +340,7 @@ export default function ConnectionsPage() {
               <div key={c.id} className="px-5 py-4 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold ${
-                    c.platform === 'wb' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                    c.platform === 'wb' ? 'bg-[#CB11AB]/10 text-[#CB11AB]' : 'bg-blue-100 text-blue-700'
                   }`}>
                     {c.platform === 'wb' ? 'WB' : 'OZ'}
                   </div>

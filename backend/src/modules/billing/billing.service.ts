@@ -1,8 +1,7 @@
 import { db } from '../../db';
-import { createBepaidCheckout } from '../../integrations/bepaid/bepaid.client';
+import { createWebpayForm, verifyWebpaySignature } from '../../integrations/webpay/webpay.client';
 import { config } from '../../config';
 
-const CURRENCY = process.env.BEPAID_CURRENCY || 'RUB';
 const MIN_TOPUP = 100;
 const MAX_TOPUP = 100_000;
 
@@ -13,103 +12,94 @@ export async function initiateTopup(userId: string, amount: number) {
       { status: 400 }
     );
   }
-  if (!config.bepaid.shopId || !config.bepaid.secretKey) {
+  if (!config.webpay.storeId || !config.webpay.secretKey) {
     throw Object.assign(
       new Error('Payment provider not configured — contact support to top up manually'),
       { status: 503 }
     );
   }
 
+  const currency = config.webpay.currency;
+
   const { rows } = await db.query(
     `INSERT INTO topup_requests (user_id, amount, currency)
      VALUES ($1, $2, $3) RETURNING id`,
-    [userId, amount, CURRENCY]
+    [userId, amount, currency]
   );
-  const requestId: string = rows[0].id;
+  const orderId: string = rows[0].id;
 
-  const { token, redirectUrl } = await createBepaidCheckout(
-    requestId,
+  const formData = createWebpayForm(
+    orderId,
     amount,
-    CURRENCY,
-    `Пополнение баланса NeuroGrid на ${amount} ${CURRENCY}`
+    currency,
+    `Пополнение баланса NeuroGrid на ${amount} ${currency}`,
   );
 
-  await db.query(
-    'UPDATE topup_requests SET bepaid_token = $1 WHERE id = $2',
-    [token, requestId]
-  );
-
-  return { requestId, redirectUrl };
+  return { orderId, formUrl: formData.formUrl, fields: formData.fields };
 }
 
-/** Called by bePaid webhook. Returns true if balance was credited (idempotent). */
-export async function processWebhook(payload: unknown): Promise<boolean> {
-  const body = payload as Record<string, unknown>;
-  const txn = body.transaction as Record<string, unknown> | undefined;
+/**
+ * Called by WebPay webhook (POST to /api/wallet/webhook/webpay).
+ * payment_type === '1' or '4' means successful payment.
+ * Returns true if balance was credited (idempotent).
+ */
+export async function processWebhook(body: Record<string, string>): Promise<boolean> {
+  const isValid = verifyWebpaySignature(body, config.webpay.secretKey);
+  if (!isValid) {
+    console.warn('[webpay webhook] invalid signature');
+    return false;
+  }
 
-  if (!txn) return false;
-
-  const status = txn.status as string;
-  const order = txn.order as Record<string, unknown> | undefined;
-  const orderId = order?.id as string | undefined;
-  const amountMinor = order?.amount as number | undefined;
-  const currency = order?.currency as string | undefined;
+  const { site_order_id: orderId, payment_type, amount: amountStr, transaction_id } = body;
 
   if (!orderId) return false;
 
+  const isSuccess = payment_type === '1' || payment_type === '4';
+  if (!isSuccess) {
+    await db.query(
+      `UPDATE topup_requests SET status = 'failed', updated_at = now() WHERE id = $1 AND status = 'pending'`,
+      [orderId]
+    );
+    return false;
+  }
+
   const { rows } = await db.query(
-    `SELECT id, user_id, amount, currency, status
-     FROM topup_requests WHERE id = $1`,
+    `SELECT id, user_id, amount, currency, status FROM topup_requests WHERE id = $1`,
     [orderId]
   );
   if (!rows.length) return false;
 
   const req = rows[0];
+  if (req.status === 'paid') return true;
 
-  if (status === 'successful') {
-    if (req.status === 'paid') return true; // already processed
-
-    // Sanity-check amount (minor units)
-    const expectedMinor = Math.round(parseFloat(req.amount) * 100);
-    if (amountMinor !== undefined && amountMinor !== expectedMinor) {
-      return false;
-    }
-    if (currency !== undefined && currency !== req.currency) {
-      return false;
-    }
-
-    // Credit balance and record transaction atomically
-    await db.query('BEGIN');
-    try {
-      await db.query(
-        'UPDATE users SET balance = balance + $1 WHERE id = $2',
-        [req.amount, req.user_id]
-      );
-      await db.query(
-        `INSERT INTO transactions (user_id, type, amount, provider_id)
-         VALUES ($1, 'topup', $2, $3)`,
-        [req.user_id, req.amount, orderId]
-      );
-      await db.query(
-        `UPDATE topup_requests SET status = 'paid', updated_at = now() WHERE id = $1`,
-        [orderId]
-      );
-      await db.query('COMMIT');
-    } catch (err) {
-      await db.query('ROLLBACK');
-      throw err;
-    }
-    return true;
+  const expectedAmount = parseFloat(req.amount);
+  const receivedAmount = parseFloat(amountStr ?? '0');
+  if (Math.abs(receivedAmount - expectedAmount) > 0.01) {
+    console.warn(`[webpay webhook] amount mismatch: expected ${expectedAmount}, got ${receivedAmount}`);
+    return false;
   }
 
-  if (status === 'failed' || status === 'expired' || status === 'canceled') {
+  await db.query('BEGIN');
+  try {
     await db.query(
-      `UPDATE topup_requests SET status = $1, updated_at = now() WHERE id = $2`,
-      [status === 'failed' ? 'failed' : 'expired', orderId]
+      'UPDATE users SET balance = balance + $1 WHERE id = $2',
+      [req.amount, req.user_id]
     );
+    await db.query(
+      `INSERT INTO transactions (user_id, type, amount, provider_id)
+       VALUES ($1, 'topup', $2, $3)`,
+      [req.user_id, req.amount, transaction_id ?? orderId]
+    );
+    await db.query(
+      `UPDATE topup_requests SET status = 'paid', updated_at = now() WHERE id = $1`,
+      [orderId]
+    );
+    await db.query('COMMIT');
+  } catch (err) {
+    await db.query('ROLLBACK');
+    throw err;
   }
-
-  return false;
+  return true;
 }
 
 export async function getTopupRequests(userId: string) {

@@ -37,10 +37,11 @@ export const config = {
     model: process.env.LLM_MODEL || 'anthropic/claude-3-5-sonnet',
   },
 
-  bepaid: {
-    shopId: process.env.BEPAID_SHOP_ID || '',
-    secretKey: process.env.BEPAID_SECRET_KEY || '',
-    sandbox: process.env.BEPAID_SANDBOX === 'true',
+  webpay: {
+    storeId: process.env.WEBPAY_STORE_ID || '',
+    secretKey: process.env.WEBPAY_SECRET_KEY || '',
+    sandbox: process.env.WEBPAY_SANDBOX !== 'false', // default true until production credentials set
+    currency: process.env.WEBPAY_CURRENCY || 'BYN',
   },
 
   image: {

@@ -213,7 +213,9 @@ export async function createConnection(data: Record<string, string>): Promise<{ 
 
 // ---- Wallet ----
 
-export async function topupWallet(amount: number): Promise<{ requestId: string; redirectUrl: string }> {
+export async function topupWallet(
+  amount: number
+): Promise<{ orderId: string; formUrl: string; fields: Record<string, string> }> {
   const res = await apiFetch('/api/wallet/topup', {
     method: 'POST',
     body: JSON.stringify({ amount }),

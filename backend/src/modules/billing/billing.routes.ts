@@ -5,15 +5,15 @@ import { initiateTopup, processWebhook, getTopupRequests } from './billing.servi
 
 export const billingRouter = Router();
 
-// Public — bePaid webhook (no JWT)
-billingRouter.post('/webhook/bepaid', async (req: Request, res: Response) => {
+// Public — WebPay webhook (no JWT, WebPay sends form-encoded POST)
+// WebPay expects HTTP 200; any other code triggers retries for 30 days
+billingRouter.post('/webhook/webpay', async (req: Request, res: Response) => {
   try {
-    await processWebhook(req.body);
-    // bePaid expects HTTP 200; any other code triggers retries
-    res.status(200).json({ status: 'ok' });
+    await processWebhook(req.body as Record<string, string>);
+    res.status(200).send('OK');
   } catch (err) {
-    console.error('[bepaid webhook]', err);
-    res.status(200).json({ status: 'error' }); // still 200 to stop retries
+    console.error('[webpay webhook]', err);
+    res.status(200).send('OK'); // still 200 to stop retries
   }
 });
 

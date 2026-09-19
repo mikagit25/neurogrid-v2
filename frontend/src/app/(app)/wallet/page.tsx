@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { getMe, topupWallet, getTransactions, getTopups } from '@/lib/api';
 import { setUser } from '@/lib/auth';
 import type { Transaction, Topup } from '@/lib/api';
@@ -12,10 +13,12 @@ const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   topup: 'Пополнение',
   run: 'Запуск',
   refund: 'Возврат',
+  charge: 'Запуск',
 };
 
 const TOPUP_STATUS_CLASSES: Record<string, string> = {
   pending: 'bg-amber-100 text-amber-700',
+  paid: 'bg-green-100 text-green-700',
   completed: 'bg-green-100 text-green-700',
   success: 'bg-green-100 text-green-700',
   failed: 'bg-red-100 text-red-700',
@@ -23,6 +26,7 @@ const TOPUP_STATUS_CLASSES: Record<string, string> = {
 
 const TOPUP_STATUS_LABELS: Record<string, string> = {
   pending: 'Ожидание',
+  paid: 'Оплачено',
   completed: 'Выполнено',
   success: 'Выполнено',
   failed: 'Ошибка',
@@ -40,7 +44,31 @@ function formatDate(dateStr: string) {
 
 const PRESET_AMOUNTS = [500, 1000, 2000, 5000];
 
+/** Auto-submit a hidden HTML form (needed for WebPay POST redirect). */
+function submitWebpayForm(formUrl: string, fields: Record<string, string>) {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = formUrl;
+  form.acceptCharset = 'UTF-8';
+  form.style.display = 'none';
+
+  for (const [name, value] of Object.entries(fields)) {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = value;
+    form.appendChild(input);
+  }
+
+  document.body.appendChild(form);
+  form.submit();
+}
+
 export default function WalletPage() {
+  const searchParams = useSearchParams();
+  const paymentStatus = searchParams.get('status');  // 'success' | 'fail' | null
+  const paymentOrder = searchParams.get('order');
+
   const [user, setUserState] = useState<StoredUser | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [topups, setTopups] = useState<Topup[]>([]);
@@ -50,32 +78,37 @@ export default function WalletPage() {
   const [topupError, setTopupError] = useState('');
   const [activeTab, setActiveTab] = useState<'transactions' | 'topups'>('transactions');
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [meData, txData, topupData] = await Promise.all([
-          getMe(),
-          getTransactions(),
-          getTopups(),
-        ]);
-        const stored: StoredUser = {
-          id: meData.user.id,
-          email: meData.user.email,
-          balance: meData.user.balance,
-          isAdmin: meData.user.is_admin,
-        };
-        setUser(stored);
-        setUserState(stored);
-        setTransactions(txData);
-        setTopups(topupData);
-      } catch {
-        // Ignore
-      } finally {
-        setLoading(false);
-      }
+  const loadData = useCallback(async () => {
+    try {
+      const [meData, txData, topupData] = await Promise.all([
+        getMe(),
+        getTransactions(),
+        getTopups(),
+      ]);
+      const stored: StoredUser = {
+        id: meData.user.id,
+        email: meData.user.email,
+        balance: meData.user.balance,
+        isAdmin: meData.user.is_admin,
+      };
+      setUser(stored);
+      setUserState(stored);
+      setTransactions(txData);
+      setTopups(topupData);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
     }
-    load();
   }, []);
+
+  useEffect(() => {
+    loadData();
+    // If redirected back from WebPay, switch to topups tab to show status
+    if (paymentStatus) {
+      setActiveTab('topups');
+    }
+  }, [loadData, paymentStatus]);
 
   async function handleTopup(e: React.FormEvent) {
     e.preventDefault();
@@ -87,29 +120,12 @@ export default function WalletPage() {
     }
     setTopupLoading(true);
     try {
-      const { redirectUrl } = await topupWallet(num);
-      window.open(redirectUrl, '_blank', 'noopener,noreferrer');
-      // Refresh after a short delay
-      setTimeout(async () => {
-        const [meData, txData, topupData] = await Promise.all([
-          getMe(),
-          getTransactions(),
-          getTopups(),
-        ]);
-        const stored: StoredUser = {
-          id: meData.user.id,
-          email: meData.user.email,
-          balance: meData.user.balance,
-          isAdmin: meData.user.is_admin,
-        };
-        setUser(stored);
-        setUserState(stored);
-        setTransactions(txData);
-        setTopups(topupData);
-      }, 3000);
+      const { formUrl, fields } = await topupWallet(num);
+      // WebPay requires a form POST — build and auto-submit
+      submitWebpayForm(formUrl, fields);
+      // Page will navigate away; no need to reset loading state
     } catch (e) {
       setTopupError(e instanceof Error ? e.message : 'Ошибка пополнения');
-    } finally {
       setTopupLoading(false);
     }
   }
@@ -121,6 +137,33 @@ export default function WalletPage() {
         <p className="text-slate-500 mt-1">Управление балансом и транзакциями</p>
       </div>
 
+      {/* Payment result banner */}
+      {paymentStatus === 'success' && (
+        <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-xl text-green-800">
+          <svg className="w-5 h-5 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <div>
+            <p className="font-medium">Платёж отправлен</p>
+            <p className="text-sm text-green-600">
+              Баланс обновится автоматически после подтверждения от WebPay.
+              {paymentOrder && <span className="ml-1 opacity-60">Заказ: {paymentOrder.slice(0, 8)}…</span>}
+            </p>
+          </div>
+        </div>
+      )}
+      {paymentStatus === 'fail' && (
+        <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-red-800">
+          <svg className="w-5 h-5 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+          <div>
+            <p className="font-medium">Платёж не прошёл</p>
+            <p className="text-sm text-red-600">Попробуйте ещё раз или используйте другую карту.</p>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Balance card */}
         <div className="bg-gradient-to-br from-purple-600 to-purple-800 rounded-xl p-6 text-white">
@@ -128,9 +171,7 @@ export default function WalletPage() {
           <p className="text-4xl font-bold mb-4">
             {loading ? '...' : `${user?.balance.toLocaleString('ru-RU') ?? '0'} ₽`}
           </p>
-          <p className="text-purple-200 text-xs">
-            {user?.email}
-          </p>
+          <p className="text-purple-200 text-xs">{user?.email}</p>
         </div>
 
         {/* Topup form */}
@@ -142,7 +183,6 @@ export default function WalletPage() {
             </div>
           )}
           <form onSubmit={handleTopup} className="space-y-3">
-            {/* Preset amounts */}
             <div className="grid grid-cols-4 gap-2">
               {PRESET_AMOUNTS.map((preset) => (
                 <button
@@ -159,27 +199,34 @@ export default function WalletPage() {
                 </button>
               ))}
             </div>
-            <div className="relative">
-              <input
-                type="number"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="Или введите сумму (100–100 000 ₽)"
-                min={100}
-                max={100000}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="Или введите сумму (100–100 000 ₽)"
+              min={100}
+              max={100000}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
             <button
               type="submit"
               disabled={topupLoading || !amount}
               className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
             >
-              {topupLoading ? 'Создание платежа...' : 'Пополнить через bePaid'}
+              {topupLoading ? 'Переход к оплате...' : 'Пополнить через WebPay'}
             </button>
-            <p className="text-xs text-slate-400 text-center">
-              Платёж обрабатывается через защищённый шлюз bePaid
-            </p>
+            {/* WebPay / Priorbank badge */}
+            <div className="flex items-center justify-center gap-3 pt-1">
+              <span className="text-xs text-slate-400">Оплата через</span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-slate-200 bg-slate-50">
+                <span className="w-4 h-4 rounded-sm bg-[#E30613] inline-block" />
+                <span className="text-xs font-semibold text-slate-700">Приорбанк</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-slate-200 bg-slate-50">
+                <span className="w-4 h-4 rounded-sm bg-[#0050A0] inline-block" />
+                <span className="text-xs font-semibold text-slate-700">WebPay</span>
+              </span>
+            </div>
           </form>
         </div>
       </div>
@@ -188,26 +235,19 @@ export default function WalletPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200">
         <div className="border-b border-slate-100">
           <div className="flex">
-            <button
-              onClick={() => setActiveTab('transactions')}
-              className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'transactions'
-                  ? 'border-purple-600 text-purple-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              Транзакции
-            </button>
-            <button
-              onClick={() => setActiveTab('topups')}
-              className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'topups'
-                  ? 'border-purple-600 text-purple-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              Пополнения
-            </button>
+            {(['transactions', 'topups'] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === tab
+                    ? 'border-purple-600 text-purple-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {tab === 'transactions' ? 'Транзакции' : 'Пополнения'}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -267,7 +307,7 @@ export default function WalletPage() {
                   {topups.map((t) => (
                     <tr key={t.id} className="hover:bg-slate-50/50">
                       <td className="px-5 py-3 font-medium text-slate-800">
-                        {Number(t.amount).toLocaleString('ru-RU')} {t.currency}
+                        {Number(t.amount).toLocaleString('ru-RU')}
                       </td>
                       <td className="px-5 py-3 text-slate-500">{t.currency}</td>
                       <td className="px-5 py-3">

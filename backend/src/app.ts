@@ -19,6 +19,8 @@ const app = express();
 app.use(helmet());
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json({ limit: '1mb' }));
+// WebPay sends webhook as application/x-www-form-urlencoded
+app.use(express.urlencoded({ extended: false, limit: '64kb' }));
 
 // Strict rate limit only on unauthenticated auth actions (login/register)
 const authActionLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
