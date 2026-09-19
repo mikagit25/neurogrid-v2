@@ -105,20 +105,27 @@ export default function LoginPage() {
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               />
             </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
-            >
-              {loading ? 'Вход...' : 'Войти'}
-            </button>
+            <div className="flex items-center justify-between">
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+              >
+                {loading ? 'Вход...' : 'Войти'}
+              </button>
+            </div>
           </form>
-          <p className="mt-4 text-center text-sm text-slate-500">
-            Нет аккаунта?{' '}
-            <Link href="/register" className="text-purple-600 hover:text-purple-700 font-medium">
-              Зарегистрироваться
+          <div className="mt-4 flex items-center justify-between text-sm text-slate-500">
+            <Link href="/forgot-password" className="text-purple-600 hover:text-purple-700 font-medium">
+              Забыли пароль?
             </Link>
-          </p>
+            <span>
+              Нет аккаунта?{' '}
+              <Link href="/register" className="text-purple-600 hover:text-purple-700 font-medium">
+                Зарегистрироваться
+              </Link>
+            </span>
+          </div>
         </div>
       </div>
     </div>

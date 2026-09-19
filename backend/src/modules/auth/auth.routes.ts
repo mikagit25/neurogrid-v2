@@ -8,6 +8,8 @@ import { registerUser, loginUser, getUserById, upsertGoogleUser,
 import { authenticate } from './auth.middleware';
 import { redis } from '../../queue/queue';
 import { config } from '../../config';
+import { db } from '../../db';
+import { sendPasswordResetEmail } from '../../utils/mailer';
 import type { JwtPayload } from './auth.service';
 
 export const authRouter = Router();
@@ -135,6 +137,74 @@ authRouter.post('/google/exchange', async (req: Request, res: Response) => {
 
   await redis.del(`oauth_code:${code}`);
   res.json(JSON.parse(raw));
+});
+
+// ── Password reset ────────────────────────────────────────────────────────────
+
+const RESET_TTL = 60 * 60; // 1 hour
+
+authRouter.post('/forgot-password', async (req: Request, res: Response) => {
+  const email = (req.body?.email ?? '').toLowerCase().trim();
+  if (!email) {
+    res.status(400).json({ error: 'Email required' });
+    return;
+  }
+
+  // Always respond with success to avoid user enumeration
+  res.json({ ok: true, message: 'Если аккаунт существует, письмо отправлено' });
+
+  // Do the actual work after responding
+  try {
+    const { rows } = await db.query(
+      'SELECT id, oauth_provider FROM users WHERE email = $1',
+      [email]
+    );
+    if (rows.length === 0) return; // user doesn't exist — silently ignore
+    if (rows[0].oauth_provider === 'google') return; // Google users have no password
+
+    const token = crypto.randomBytes(32).toString('hex');
+    await redis.setex(`reset:${token}`, RESET_TTL, email);
+
+    const resetUrl = `${config.frontendUrl}/reset-password?token=${token}`;
+    await sendPasswordResetEmail(email, resetUrl);
+  } catch (err) {
+    console.error('[forgot-password]', err);
+  }
+});
+
+authRouter.post('/reset-password', async (req: Request, res: Response) => {
+  const { token, password } = req.body ?? {};
+  if (!token || !password || password.length < 8) {
+    res.status(400).json({ error: 'Token and password (min 8 chars) required' });
+    return;
+  }
+
+  const email = await redis.get(`reset:${token}`);
+  if (!email) {
+    res.status(400).json({ error: 'Ссылка недействительна или истекла. Запросите новую.' });
+    return;
+  }
+
+  try {
+    const bcrypt = await import('bcryptjs');
+    const hash = await bcrypt.hash(password, 12);
+    const { rowCount } = await db.query(
+      'UPDATE users SET password_hash = $1 WHERE email = $2',
+      [hash, email]
+    );
+    if (!rowCount) {
+      res.status(404).json({ error: 'Пользователь не найден' });
+      return;
+    }
+    await redis.del(`reset:${token}`);
+
+    // Clear any login lockout for this email
+    await redis.del(`login_fail:email:${email}`);
+
+    res.json({ ok: true, message: 'Пароль успешно изменён' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
