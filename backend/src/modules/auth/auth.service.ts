@@ -47,7 +47,7 @@ export async function loginUser(email: string, password: string) {
 
   return {
     token,
-    user: { id: user.id, email: user.email, balance: user.balance, isAdmin: user.is_admin },
+    user: { id: user.id, email: user.email, balance: user.balance, is_admin: user.is_admin },
   };
 }
 
