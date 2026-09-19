@@ -51,6 +51,35 @@ export async function loginUser(email: string, password: string) {
   };
 }
 
+export async function upsertGoogleUser(profile: { email: string; googleId: string; name: string }) {
+  const { email, googleId, name } = profile;
+
+  // Look up by email first (handles existing email/password accounts linking Google)
+  const existing = await db.query(
+    'SELECT id, email, balance, is_admin FROM users WHERE email = $1',
+    [email]
+  );
+  if (existing.rows.length > 0) {
+    const user = existing.rows[0];
+    // Link Google to existing account if not yet linked
+    await db.query(
+      `UPDATE users SET oauth_provider = 'google', oauth_id = $1
+       WHERE id = $2 AND oauth_provider IS NULL`,
+      [googleId, user.id]
+    );
+    return user;
+  }
+
+  // New user via Google — password_hash is NULL
+  const { rows } = await db.query(
+    `INSERT INTO users (email, password_hash, oauth_provider, oauth_id)
+     VALUES ($1, NULL, 'google', $2)
+     RETURNING id, email, balance, is_admin`,
+    [email, googleId]
+  );
+  return rows[0];
+}
+
 export async function getUserById(userId: string) {
   const { rows } = await db.query(
     'SELECT id, email, balance, is_admin, created_at FROM users WHERE id = $1',

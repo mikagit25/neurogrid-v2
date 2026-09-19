@@ -357,7 +357,7 @@ export default function RunResult({ slug, result }: RunResultProps) {
 
     return (
       <div className="space-y-4">
-        {data.note && <p className="text-sm text-slate-500">{String(data.note)}</p>}
+        {!!data.note && <p className="text-sm text-slate-500">{String(data.note)}</p>}
 
         {/* KPI row */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -373,13 +373,13 @@ export default function RunResult({ slug, result }: RunResultProps) {
               </div>
             </>
           )}
-          {analysis?.competitionLevel && (
+          {!!analysis?.competitionLevel && (
             <div className={`border rounded-xl p-3 text-center ${COMPETITION_COLORS[compLevel] ?? ''}`}>
               <p className="text-lg font-bold">{COMPETITION_LABELS[compLevel] ?? compLevel}</p>
               <p className="text-xs mt-0.5 font-medium">Конкуренция</p>
             </div>
           )}
-          {analysis?.marginPotential && (
+          {!!analysis?.marginPotential && (
             <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-center">
               <p className="text-lg font-bold text-purple-700">{MARGIN_LABELS[String(analysis.marginPotential)] ?? String(analysis.marginPotential)}</p>
               <p className="text-xs text-purple-500 mt-0.5">Потенциал маржи</p>
@@ -388,7 +388,7 @@ export default function RunResult({ slug, result }: RunResultProps) {
         </div>
 
         {/* AI Summary */}
-        {analysis?.summary && (
+        {!!analysis?.summary && (
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <p className="text-sm font-medium text-blue-700 mb-1">Обзор ниши</p>
             <p className="text-sm text-blue-900">{String(analysis.summary)}</p>
@@ -396,7 +396,7 @@ export default function RunResult({ slug, result }: RunResultProps) {
         )}
 
         {/* Entry price recommendation */}
-        {analysis?.entryPrice && (
+        {!!analysis?.entryPrice && (
           <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3">
             <div className="text-center shrink-0">
               <p className="text-2xl font-bold text-green-700">{Number(analysis.entryPrice).toLocaleString('ru-RU')} ₽</p>
@@ -407,7 +407,7 @@ export default function RunResult({ slug, result }: RunResultProps) {
         )}
 
         {/* Strategy */}
-        {analysis?.strategy && (
+        {!!analysis?.strategy && (
           <TextBlock label="Стратегия входа" value={String(analysis.strategy)} />
         )}
 

@@ -252,17 +252,15 @@ export default function AutopilotPage() {
     setError('');
     setStep('analyzing');
 
-    try {
-      function normalizePlan(plan: AutopilotPlan): AutopilotPlan {
-        return {
-          ...plan,
-          photoEnhancements: (plan.photoEnhancements ?? []).map((e) => ({
-            ...e,
-            enabled: e.recommended,
-          })),
-        };
-      }
+    const normalizePlan = (plan: AutopilotPlan): AutopilotPlan => ({
+      ...plan,
+      photoEnhancements: (plan.photoEnhancements ?? []).map((e) => ({
+        ...e,
+        enabled: e.recommended,
+      })),
+    });
 
+    try {
       if (activeSlots.length === 1) {
         const s0 = activeSlots[0].input;
         const plan = normalizePlan(await analyzeProduct({

@@ -57,4 +57,10 @@ export const config = {
     apiKey: process.env.IMAGE_API_KEY || '',
     defaultModel: process.env.IMAGE_MODEL || 'flux',
   },
+
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID || '',
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+    redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:4001/api/auth/google/callback',
+  },
 };

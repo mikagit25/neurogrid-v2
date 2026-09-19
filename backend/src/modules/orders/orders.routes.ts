@@ -8,6 +8,15 @@ import { OzonAdapter } from '../../integrations/marketplace/ozon/ozon.adapter';
 export const ordersRouter = Router();
 ordersRouter.use(authenticate);
 
+async function safeGetConn(connectionId: string, userId: string, res: Response) {
+  try {
+    return await getConnectionById(connectionId, userId);
+  } catch {
+    res.status(400).json({ error: 'Invalid connection id' });
+    return null;
+  }
+}
+
 // GET /api/orders?status=new|all&connectionId=...
 ordersRouter.get('/', async (req: Request, res: Response) => {
   const userId = req.user!.userId;
@@ -17,7 +26,8 @@ ordersRouter.get('/', async (req: Request, res: Response) => {
   try {
     let connections;
     if (connectionId) {
-      const c = await getConnectionById(connectionId, userId);
+      const c = await safeGetConn(connectionId, userId, res);
+      if (c === null) return;
       connections = c ? [c] : [];
     } else {
       connections = await getUserConnections(userId);
@@ -57,8 +67,9 @@ ordersRouter.post('/wb/supply', async (req: Request, res: Response) => {
     return;
   }
 
-  const conn = await getConnectionById(connectionId, req.user!.userId);
-  if (!conn || conn.platform !== 'wb') {
+  const conn = await safeGetConn(connectionId, req.user!.userId, res);
+  if (!conn) return;
+  if (conn.platform !== 'wb') {
     res.status(400).json({ error: 'WB connection required' });
     return;
   }
@@ -77,8 +88,9 @@ ordersRouter.post('/wb/supply', async (req: Request, res: Response) => {
 // POST /api/orders/wb/supply/:supplyId/close
 ordersRouter.post('/wb/supply/:supplyId/close', async (req: Request, res: Response) => {
   const { connectionId } = req.body;
-  const conn = await getConnectionById(connectionId, req.user!.userId);
-  if (!conn || conn.platform !== 'wb') { res.status(400).json({ error: 'WB connection required' }); return; }
+  const conn = await safeGetConn(connectionId, req.user!.userId, res);
+  if (!conn) return;
+  if (conn.platform !== 'wb') { res.status(400).json({ error: 'WB connection required' }); return; }
 
   try {
     const adapter = createAdapter('wb', conn.credentials_enc) as WbAdapter;
@@ -92,8 +104,9 @@ ordersRouter.post('/wb/supply/:supplyId/close', async (req: Request, res: Respon
 // GET /api/orders/wb/supply/:supplyId/barcode?connectionId=...
 ordersRouter.get('/wb/supply/:supplyId/barcode', async (req: Request, res: Response) => {
   const connectionId = req.query.connectionId as string;
-  const conn = await getConnectionById(connectionId, req.user!.userId);
-  if (!conn || conn.platform !== 'wb') { res.status(400).json({ error: 'WB connection required' }); return; }
+  const conn = await safeGetConn(connectionId, req.user!.userId, res);
+  if (!conn) return;
+  if (conn.platform !== 'wb') { res.status(400).json({ error: 'WB connection required' }); return; }
 
   try {
     const adapter = createAdapter('wb', conn.credentials_enc) as WbAdapter;
@@ -112,8 +125,9 @@ ordersRouter.post('/wb/stickers', async (req: Request, res: Response) => {
     return;
   }
 
-  const conn = await getConnectionById(connectionId, req.user!.userId);
-  if (!conn || conn.platform !== 'wb') { res.status(400).json({ error: 'WB connection required' }); return; }
+  const conn = await safeGetConn(connectionId, req.user!.userId, res);
+  if (!conn) return;
+  if (conn.platform !== 'wb') { res.status(400).json({ error: 'WB connection required' }); return; }
 
   try {
     const adapter = createAdapter('wb', conn.credentials_enc) as WbAdapter;
@@ -134,8 +148,9 @@ ordersRouter.post('/ozon/ship', async (req: Request, res: Response) => {
     return;
   }
 
-  const conn = await getConnectionById(connectionId, req.user!.userId);
-  if (!conn || conn.platform !== 'ozon') { res.status(400).json({ error: 'Ozon connection required' }); return; }
+  const conn = await safeGetConn(connectionId, req.user!.userId, res);
+  if (!conn) return;
+  if (conn.platform !== 'ozon') { res.status(400).json({ error: 'Ozon connection required' }); return; }
 
   try {
     const adapter = createAdapter('ozon', conn.credentials_enc) as OzonAdapter;
@@ -156,8 +171,9 @@ ordersRouter.post('/ozon/label', async (req: Request, res: Response) => {
     return;
   }
 
-  const conn = await getConnectionById(connectionId, req.user!.userId);
-  if (!conn || conn.platform !== 'ozon') { res.status(400).json({ error: 'Ozon connection required' }); return; }
+  const conn = await safeGetConn(connectionId, req.user!.userId, res);
+  if (!conn) return;
+  if (conn.platform !== 'ozon') { res.status(400).json({ error: 'Ozon connection required' }); return; }
 
   try {
     const adapter = createAdapter('ozon', conn.credentials_enc) as OzonAdapter;
@@ -171,8 +187,9 @@ ordersRouter.post('/ozon/label', async (req: Request, res: Response) => {
 // POST /api/orders/ozon/sticker  — product sticker PDF
 ordersRouter.post('/ozon/sticker', async (req: Request, res: Response) => {
   const { connectionId, postingNumber, skus } = req.body;
-  const conn = await getConnectionById(connectionId, req.user!.userId);
-  if (!conn || conn.platform !== 'ozon') { res.status(400).json({ error: 'Ozon connection required' }); return; }
+  const conn = await safeGetConn(connectionId, req.user!.userId, res);
+  if (!conn) return;
+  if (conn.platform !== 'ozon') { res.status(400).json({ error: 'Ozon connection required' }); return; }
 
   try {
     const adapter = createAdapter('ozon', conn.credentials_enc) as OzonAdapter;
