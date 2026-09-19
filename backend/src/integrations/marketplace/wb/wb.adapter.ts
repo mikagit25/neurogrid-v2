@@ -48,6 +48,12 @@ export class WbAdapter implements MarketplaceAdapter {
       stock: 0, // stock is a separate WB API — fetched on demand
       categoryId: c.subjectID ? String(c.subjectID) : undefined,
       description: c.description,
+      photoUrls: (c.photos ?? []).slice(0, 3).map((p: any) => p.big ?? p.c516x688 ?? p.c246x328 ?? '').filter(Boolean),
+      characteristics: Object.fromEntries(
+        (c.characteristics ?? []).flatMap((g: any) =>
+          (g.attributes ?? []).map((a: any) => [a.name, (a.value ?? []).map((v: any) => v.value ?? v).join(', ')])
+        )
+      ),
     }));
   }
 

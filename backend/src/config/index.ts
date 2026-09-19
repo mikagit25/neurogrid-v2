@@ -31,10 +31,17 @@ export const config = {
   },
 
   llm: {
-    provider: process.env.LLM_PROVIDER || 'openrouter',
-    apiKey: process.env.LLM_API_KEY || '',
-    baseUrl: process.env.LLM_BASE_URL || 'https://openrouter.ai/api/v1',
-    model: process.env.LLM_MODEL || 'anthropic/claude-3-5-sonnet',
+    // Text model — used for card generation, SEO, review drafts, etc.
+    provider: process.env.LLM_PROVIDER || 'ollama',
+    apiKey: process.env.LLM_API_KEY || 'ollama',
+    baseUrl: process.env.LLM_BASE_URL || 'http://localhost:11434/v1',
+    model: process.env.LLM_MODEL || 'qwen3:8b',
+
+    // Vision model — used when messages contain images (autopilot analyze, photo img2img, multi-photo-studio).
+    // Falls back to text model config if not separately configured.
+    visionApiKey: process.env.LLM_VISION_API_KEY || process.env.LLM_API_KEY || 'ollama',
+    visionBaseUrl: process.env.LLM_VISION_BASE_URL || process.env.LLM_BASE_URL || 'http://localhost:11434/v1',
+    visionModel: process.env.LLM_VISION_MODEL || process.env.LLM_MODEL || 'qwen3:8b',
   },
 
   webpay: {
@@ -45,8 +52,9 @@ export const config = {
   },
 
   image: {
-    provider: process.env.IMAGE_PROVIDER || 'together',
+    // 'pollinations' = free, no key. 'together' = paid Together AI key required.
+    provider: process.env.IMAGE_PROVIDER || 'pollinations',
     apiKey: process.env.IMAGE_API_KEY || '',
-    defaultModel: process.env.IMAGE_MODEL || 'black-forest-labs/FLUX.1.1-pro',
+    defaultModel: process.env.IMAGE_MODEL || 'flux',
   },
 };

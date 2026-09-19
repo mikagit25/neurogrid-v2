@@ -79,6 +79,17 @@ export default function ProductsPage() {
     router.push(`/scenarios/card-generator?${params}`);
   }
 
+  function handleAutopilot(product: ScoredProduct) {
+    sessionStorage.setItem('autopilot_prefill', JSON.stringify({
+      name: product.title || `Арт. ${product.sku}`,
+      description: product.description ?? '',
+      photoUrls: product.photoUrls ?? [],
+      platform: product.platform,
+      connectionId: product.connectionId,
+    }));
+    router.push('/autopilot');
+  }
+
   const filtered = filter === 'all' ? products : products.filter((p) => p.scoreLabel === filter);
 
   if (loading) return (
@@ -183,11 +194,18 @@ export default function ProductsPage() {
             const c = SCORE_COLORS[p.scoreLabel];
             return (
               <div key={`${p.platform}-${p.sku}`} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4">
-                {/* Score badge */}
-                <div className={`shrink-0 w-14 h-14 rounded-xl border flex flex-col items-center justify-center ${c.badge}`}>
-                  <span className="text-lg font-bold leading-none">{p.score}</span>
-                  <span className="text-xs font-medium mt-0.5">{c.label}</span>
-                </div>
+                {/* Photo thumbnail */}
+                {p.photoUrls?.[0] ? (
+                  <div className="shrink-0 w-14 h-14 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                    <img src={p.photoUrls[0]} alt={p.title} className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  /* Score badge when no photo */
+                  <div className={`shrink-0 w-14 h-14 rounded-xl border flex flex-col items-center justify-center ${c.badge}`}>
+                    <span className="text-lg font-bold leading-none">{p.score}</span>
+                    <span className="text-xs font-medium mt-0.5">{c.label}</span>
+                  </div>
+                )}
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
@@ -198,6 +216,11 @@ export default function ProductsPage() {
                     }`}>
                       {p.platform === 'wb' ? 'WB' : 'Ozon'} · {p.sku}
                     </span>
+                    {p.photoUrls?.[0] && (
+                      <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${c.badge}`}>
+                        {p.score} · {c.label}
+                      </span>
+                    )}
                   </div>
                   <div className="mt-2">
                     <ScoreBar score={p.score} label={p.scoreLabel} />
@@ -214,7 +237,7 @@ export default function ProductsPage() {
                 </div>
 
                 {/* Price + Stock + CTA */}
-                <div className="flex items-center gap-3 shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
                   <div className="text-right hidden sm:block">
                     <p className="text-sm font-semibold text-slate-800">{p.price.toLocaleString('ru-RU')} ₽</p>
                     <p className="text-xs text-slate-400">{p.stock} шт.</p>
@@ -230,6 +253,12 @@ export default function ProductsPage() {
                       Улучшить с AI
                     </button>
                   )}
+                  <button
+                    onClick={() => handleAutopilot(p)}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium rounded-xl transition-colors whitespace-nowrap"
+                  >
+                    🤖 Автопилот
+                  </button>
                 </div>
               </div>
             );

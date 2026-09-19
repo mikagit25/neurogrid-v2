@@ -62,6 +62,10 @@ export class OzonAdapter implements MarketplaceAdapter {
         stock: info.stocks?.present ?? 0,
         categoryId: info.category_id ? String(info.category_id) : undefined,
         description: info.description,
+        photoUrls: (info.images ?? []).slice(0, 3),
+        characteristics: Object.fromEntries(
+          (info.attributes ?? []).map((a: any) => [a.attribute_id, (a.values ?? []).map((v: any) => v.value).join(', ')])
+        ),
       };
     });
   }

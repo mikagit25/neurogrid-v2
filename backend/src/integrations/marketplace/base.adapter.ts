@@ -5,6 +5,8 @@ export interface ProductInfo {
   stock: number;
   categoryId?: string;
   description?: string;
+  photoUrls?: string[];
+  characteristics?: Record<string, string>;
 }
 
 export interface CompetitorPrice {

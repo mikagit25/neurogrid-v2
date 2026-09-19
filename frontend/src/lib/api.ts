@@ -259,6 +259,8 @@ export interface ScoredProduct {
   price: number;
   stock: number;
   description?: string;
+  photoUrls?: string[];
+  characteristics?: Record<string, string>;
   score: number;
   scoreLabel: 'excellent' | 'good' | 'average' | 'poor';
   issues: string[];
@@ -349,6 +351,143 @@ export async function deleteAutomation(id: string): Promise<void> {
 export async function triggerAutomation(id: string): Promise<void> {
   const res = await apiFetch(`/api/automations/${id}/run`, { method: 'POST' });
   if (!res.ok) throw new Error('Не удалось запустить');
+}
+
+// ---- Autopilot ----
+
+export interface AutopilotAction {
+  type: string;
+  title: string;
+  description: string;
+  recommended: boolean;
+  enabled: boolean;
+  agentType?: boolean;
+  schedule?: 'hourly' | 'daily' | 'weekly';
+  autoApply?: boolean;
+}
+
+export interface PhotoEnhancement {
+  type: 'lifestyle' | 'text-overlay' | 'seasonal' | 'companion' | 'custom-bg';
+  label: string;
+  description: string;
+  recommended: boolean;
+  enabled: boolean;
+  config: Record<string, string>;
+}
+
+export interface AutopilotPlan {
+  detected: { name: string; category: string; characteristics: string[] };
+  actions: AutopilotAction[];
+  pricing: { recommended: 'competitive' | 'margin' | 'fixed'; reason: string };
+  photoEnhancements?: PhotoEnhancement[];
+}
+
+export interface AutopilotSession {
+  id: string;
+  status: 'running' | 'done' | 'error';
+  product_name: string;
+  product_data: Record<string, unknown>;
+  plan: AutopilotAction[];
+  runs: Record<string, { runId: string; status: string; result?: Record<string, unknown>; errorMessage?: string }>;
+  connection_name?: string;
+  connection_platform?: string;
+  created_at: string;
+}
+
+export interface PricingRule {
+  id: string;
+  connection_id: string | null;
+  sku: string | null;
+  name: string;
+  strategy: 'margin' | 'competitive' | 'fixed' | 'dynamic';
+  config: Record<string, unknown>;
+  enabled: boolean;
+  last_applied_at: string | null;
+  connection_name?: string;
+  connection_platform?: string;
+  created_at: string;
+}
+
+export async function analyzeProduct(data: {
+  productName: string;
+  description: string;
+  photoUrls: string[];
+  platform: 'wb' | 'ozon';
+}): Promise<AutopilotPlan> {
+  const res = await apiFetch('/api/autopilot/analyze', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'Ошибка анализа');
+  }
+  return (await res.json()).plan;
+}
+
+export async function analyzeBatch(products: Array<{
+  productName: string;
+  description: string;
+  photoUrls: string[];
+  platform: 'wb' | 'ozon';
+}>): Promise<Array<AutopilotPlan | { error: string }>> {
+  const res = await apiFetch('/api/autopilot/analyze/batch', {
+    method: 'POST',
+    body: JSON.stringify({ products }),
+  });
+  if (!res.ok) throw new Error('Ошибка анализа');
+  return (await res.json()).plans;
+}
+
+export async function executeAutopilot(data: {
+  product: { name: string; description: string; photoUrls: string[]; platform: 'wb' | 'ozon'; characteristics: string[] };
+  connectionId: string | null;
+  actions: AutopilotAction[];
+  photoEnhancements?: PhotoEnhancement[];
+  pricingRule?: { name: string; strategy: string; config: Record<string, unknown>; enabled: boolean } | null;
+}): Promise<{ sessionId: string }> {
+  const res = await apiFetch('/api/autopilot/execute', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'Ошибка запуска');
+  }
+  return res.json();
+}
+
+export async function getAutopilotSession(sessionId: string): Promise<AutopilotSession> {
+  const res = await apiFetch(`/api/autopilot/sessions/${sessionId}`);
+  if (!res.ok) throw new Error('Сессия не найдена');
+  return (await res.json()).session;
+}
+
+export async function getAutopilotSessions(): Promise<AutopilotSession[]> {
+  const res = await apiFetch('/api/autopilot/sessions');
+  if (!res.ok) throw new Error('Не удалось загрузить сессии');
+  return (await res.json()).sessions;
+}
+
+export async function getPricingRules(): Promise<PricingRule[]> {
+  const res = await apiFetch('/api/autopilot/pricing-rules');
+  if (!res.ok) throw new Error('Не удалось загрузить правила');
+  return (await res.json()).rules;
+}
+
+export async function savePricingRule(data: Partial<PricingRule> & { name: string; strategy: string; config: Record<string, unknown> }): Promise<PricingRule> {
+  const method = data.id ? 'PATCH' : 'POST';
+  const url = data.id ? `/api/autopilot/pricing-rules/${data.id}` : '/api/autopilot/pricing-rules';
+  const res = await apiFetch(url, { method, body: JSON.stringify(data) });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'Ошибка сохранения');
+  }
+  return (await res.json()).rule;
+}
+
+export async function deletePricingRule(id: string): Promise<void> {
+  await apiFetch(`/api/autopilot/pricing-rules/${id}`, { method: 'DELETE' });
 }
 
 // ---- Admin ----

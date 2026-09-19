@@ -83,6 +83,58 @@ function SimpleTable({ data }: { data: TableRow[] }) {
 export default function RunResult({ slug, result }: RunResultProps) {
   const data = result;
 
+  // ---- Multi-view studio ----
+  if (slug === 'multi-photo-studio') {
+    const views = data.views as Array<{ id: string; label: string; url: string | null; error?: string }> | undefined;
+    const note = data.note as string | undefined;
+
+    return (
+      <div className="space-y-4">
+        {note && (
+          <p className="text-sm text-slate-500">{note}</p>
+        )}
+        <div className="grid grid-cols-2 gap-4">
+          {(views ?? []).map((view) => {
+            const fullUrl = view.url
+              ? view.url.startsWith('http') ? view.url : `${API_URL}${view.url}`
+              : null;
+            return (
+              <div key={view.id} className="border border-slate-200 rounded-xl overflow-hidden">
+                <div className="px-3 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                  <span className="text-xs font-medium text-slate-600">{view.label}</span>
+                  {fullUrl && (
+                    <a
+                      href={fullUrl}
+                      download
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-purple-600 hover:text-purple-700 font-medium"
+                    >
+                      Скачать
+                    </a>
+                  )}
+                </div>
+                {fullUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={fullUrl} alt={view.label} className="w-full aspect-square object-cover" />
+                ) : (
+                  <div className="aspect-square bg-slate-100 flex items-center justify-center">
+                    <p className="text-xs text-red-500 text-center px-3">{view.error ?? 'Ошибка'}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {(views ?? []).some((v) => v.url) && (
+          <p className="text-xs text-slate-400">
+            Нажмите «Скачать» под каждым изображением для сохранения
+          </p>
+        )}
+      </div>
+    );
+  }
+
   // ---- Image scenarios ----
   if (slug === 'photo-generator' || slug === 'infographic-generator') {
     const imageUrl = data.imageUrl as string | undefined;
@@ -285,6 +337,144 @@ export default function RunResult({ slug, result }: RunResultProps) {
                 : String(data[key])
             } />
           ))}
+      </div>
+    );
+  }
+
+  // ---- Niche analysis ----
+  if (slug === 'niche-analysis') {
+    const analysis = data.analysis as Record<string, unknown> | undefined;
+    const topCompetitors = data.topCompetitors as Array<{ name: string; brand: string; price: number; salePrice?: number; rating: number; reviews: number }> | undefined;
+    const priceRange = data.priceRange as { min: number; max: number; avg: number } | undefined;
+    const COMPETITION_COLORS: Record<string, string> = {
+      low: 'text-green-700 bg-green-50 border-green-200',
+      medium: 'text-amber-700 bg-amber-50 border-amber-200',
+      high: 'text-red-700 bg-red-50 border-red-200',
+    };
+    const COMPETITION_LABELS: Record<string, string> = { low: 'Низкая', medium: 'Средняя', high: 'Высокая' };
+    const MARGIN_LABELS: Record<string, string> = { low: 'Низкий', medium: 'Средний', high: 'Высокий' };
+    const compLevel = String(analysis?.competitionLevel ?? 'medium');
+
+    return (
+      <div className="space-y-4">
+        {data.note && <p className="text-sm text-slate-500">{String(data.note)}</p>}
+
+        {/* KPI row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {priceRange && (
+            <>
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                <p className="text-xl font-bold text-slate-800">{priceRange.avg.toLocaleString('ru-RU')} ₽</p>
+                <p className="text-xs text-slate-500 mt-0.5">Средняя цена</p>
+              </div>
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                <p className="text-sm font-semibold text-slate-700">{priceRange.min.toLocaleString('ru-RU')} – {priceRange.max.toLocaleString('ru-RU')} ₽</p>
+                <p className="text-xs text-slate-500 mt-0.5">Диапазон цен</p>
+              </div>
+            </>
+          )}
+          {analysis?.competitionLevel && (
+            <div className={`border rounded-xl p-3 text-center ${COMPETITION_COLORS[compLevel] ?? ''}`}>
+              <p className="text-lg font-bold">{COMPETITION_LABELS[compLevel] ?? compLevel}</p>
+              <p className="text-xs mt-0.5 font-medium">Конкуренция</p>
+            </div>
+          )}
+          {analysis?.marginPotential && (
+            <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-center">
+              <p className="text-lg font-bold text-purple-700">{MARGIN_LABELS[String(analysis.marginPotential)] ?? String(analysis.marginPotential)}</p>
+              <p className="text-xs text-purple-500 mt-0.5">Потенциал маржи</p>
+            </div>
+          )}
+        </div>
+
+        {/* AI Summary */}
+        {analysis?.summary && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <p className="text-sm font-medium text-blue-700 mb-1">Обзор ниши</p>
+            <p className="text-sm text-blue-900">{String(analysis.summary)}</p>
+          </div>
+        )}
+
+        {/* Entry price recommendation */}
+        {analysis?.entryPrice && (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3">
+            <div className="text-center shrink-0">
+              <p className="text-2xl font-bold text-green-700">{Number(analysis.entryPrice).toLocaleString('ru-RU')} ₽</p>
+              <p className="text-xs text-green-600">Цена входа</p>
+            </div>
+            <p className="text-sm text-green-800 mt-0.5">{String(analysis.entryPriceReason ?? '')}</p>
+          </div>
+        )}
+
+        {/* Strategy */}
+        {analysis?.strategy && (
+          <TextBlock label="Стратегия входа" value={String(analysis.strategy)} />
+        )}
+
+        {/* Opportunities & Warnings */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {Array.isArray(analysis?.opportunities) && (analysis.opportunities as string[]).length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-sm font-medium text-slate-700 mb-2">Возможности</p>
+              <ul className="space-y-1">
+                {(analysis.opportunities as string[]).map((o, i) => (
+                  <li key={i} className="text-sm text-slate-600 flex gap-2"><span className="text-green-500">✓</span>{o}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {Array.isArray(analysis?.warnings) && (analysis.warnings as string[]).length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-sm font-medium text-slate-700 mb-2">Риски</p>
+              <ul className="space-y-1">
+                {(analysis.warnings as string[]).map((w, i) => (
+                  <li key={i} className="text-sm text-slate-600 flex gap-2"><span className="text-amber-500">⚠</span>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        {/* Top brands */}
+        {Array.isArray(analysis?.topBrands) && (
+          <div>
+            <p className="text-sm font-medium text-slate-600 mb-2">Топ бренды</p>
+            <div className="flex flex-wrap gap-2">
+              {(analysis.topBrands as string[]).map((b, i) => (
+                <span key={i} className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-sm font-medium">{b}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Competitor table */}
+        {topCompetitors && topCompetitors.length > 0 && (
+          <div>
+            <p className="text-sm font-medium text-slate-600 mb-2">Топ конкурентов по отзывам</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border border-slate-200 rounded-xl overflow-hidden">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-500">Товар</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">Цена</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">Рейтинг</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">Отзывов</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {topCompetitors.map((c, i) => (
+                    <tr key={i} className="bg-white hover:bg-slate-50">
+                      <td className="px-3 py-2 text-slate-800 max-w-[180px] truncate">{c.name}</td>
+                      <td className="px-3 py-2 text-right font-medium text-slate-700">{(c.salePrice ?? c.price).toLocaleString('ru-RU')} ₽</td>
+                      <td className="px-3 py-2 text-right text-amber-600">★ {c.rating}</td>
+                      <td className="px-3 py-2 text-right text-slate-500">{c.reviews.toLocaleString('ru-RU')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

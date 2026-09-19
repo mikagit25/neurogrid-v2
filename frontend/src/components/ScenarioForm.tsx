@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { Connection } from '@/lib/api';
+import ImageUpload from '@/components/ImageUpload';
 
 interface ScenarioFormProps {
   slug: string;
@@ -13,11 +14,58 @@ interface ScenarioFormProps {
 
 const SLUGS_NEEDING_CONNECTION = ['price-monitor', 'review-drafts', 'stock-forecast', 'seo-audit'];
 
+interface Enhancement {
+  enabled: boolean;
+  setting?: string;
+  text?: string;
+  textStyle?: string;
+  season?: string;
+  companion?: string;
+  bgDescription?: string;
+}
+
+interface Enhancements {
+  lifestyle: Enhancement;
+  textOverlay: Enhancement;
+  seasonal: Enhancement;
+  companion: Enhancement;
+  customBg: Enhancement;
+}
+
+const SEASONAL_OPTIONS = [
+  { value: 'new-year', label: 'Новый год / Рождество' },
+  { value: 'valentine', label: '14 февраля — День влюблённых' },
+  { value: 'march8', label: '8 марта' },
+  { value: 'summer', label: 'Лето / отпуск' },
+  { value: 'autumn', label: 'Осень / уют' },
+];
+
+const LIFESTYLE_PRESETS = [
+  'На рабочем столе',
+  'В уютном интерьере',
+  'На кухне',
+  'В спальне',
+  'На открытом воздухе',
+];
+
 export default function ScenarioForm({ slug, connections, onSubmit, loading, price }: ScenarioFormProps) {
   const needsConnection = SLUGS_NEEDING_CONNECTION.includes(slug);
   const [connectionId, setConnectionId] = useState('');
   const [fields, setFields] = useState<Record<string, string>>({});
+  const [photoUrls, setPhotoUrls] = useState<string[]>(['', '', '', '', '']);
+  const [enhancements, setEnhancements] = useState<Enhancements>({
+    lifestyle:   { enabled: false, setting: '' },
+    textOverlay: { enabled: false, text: '', textStyle: 'badge' },
+    seasonal:    { enabled: false, season: 'new-year' },
+    companion:   { enabled: false, companion: '' },
+    customBg:    { enabled: false, bgDescription: '' },
+  });
+  const [showEnhancements, setShowEnhancements] = useState(false);
   const [error, setError] = useState('');
+
+  function patchEnhancement(key: keyof Enhancements, patch: Partial<Enhancement>) {
+    setEnhancements((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+  }
 
   function setField(key: string, value: string) {
     setFields((prev) => ({ ...prev, [key]: value }));
@@ -93,6 +141,7 @@ export default function ScenarioForm({ slug, connections, onSubmit, loading, pri
         productName: getField('productName').trim(),
         ...(getField('style') && { style: getField('style') }),
         ...(getField('description').trim() && { description: getField('description').trim() }),
+        ...(getField('referenceImageUrl').trim() && { referenceImageUrl: getField('referenceImageUrl').trim() }),
       };
     } else if (slug === 'infographic-generator') {
       if (!getField('photoUrl').trim()) {
@@ -118,6 +167,49 @@ export default function ScenarioForm({ slug, connections, onSubmit, loading, pri
         ...(getField('title').trim() && { title: getField('title').trim() }),
         ...(getField('accentColor').trim() && { accentColor: getField('accentColor').trim() }),
         ...(getField('bgColor').trim() && { bgColor: getField('bgColor').trim() }),
+      };
+    } else if (slug === 'multi-photo-studio') {
+      if (!getField('productName').trim()) {
+        setError('Введите название товара');
+        return;
+      }
+      const validUrls = photoUrls.filter(Boolean);
+      if (validUrls.length === 0) {
+        setError('Загрузите хотя бы одно фото товара');
+        return;
+      }
+      // Collect enabled enhancements
+      const activeEnhancements = [];
+      if (enhancements.lifestyle.enabled && enhancements.lifestyle.setting?.trim()) {
+        activeEnhancements.push({ type: 'lifestyle', setting: enhancements.lifestyle.setting.trim() });
+      }
+      if (enhancements.textOverlay.enabled && enhancements.textOverlay.text?.trim()) {
+        activeEnhancements.push({ type: 'text-overlay', text: enhancements.textOverlay.text.trim(), style: enhancements.textOverlay.textStyle || 'badge' });
+      }
+      if (enhancements.seasonal.enabled && enhancements.seasonal.season) {
+        activeEnhancements.push({ type: 'seasonal', season: enhancements.seasonal.season });
+      }
+      if (enhancements.companion.enabled && enhancements.companion.companion?.trim()) {
+        activeEnhancements.push({ type: 'companion', product: enhancements.companion.companion.trim() });
+      }
+      if (enhancements.customBg.enabled && enhancements.customBg.bgDescription?.trim()) {
+        activeEnhancements.push({ type: 'custom-bg', description: enhancements.customBg.bgDescription.trim() });
+      }
+      inputData = {
+        productName: getField('productName').trim(),
+        photoUrls: validUrls,
+        style: getField('studioStyle') || 'studio-3d',
+        enhancements: activeEnhancements,
+      };
+    } else if (slug === 'niche-analysis') {
+      if (!getField('keyword').trim()) {
+        setError('Введите ключевое слово для поиска');
+        return;
+      }
+      inputData = {
+        keyword: getField('keyword').trim(),
+        platform: getField('platform') || 'wb',
+        limit: Number(getField('limit') || 50),
       };
     } else {
       inputData = { ...fields };
@@ -356,6 +448,12 @@ export default function ScenarioForm({ slug, connections, onSubmit, loading, pri
               <option value="studio">Студийная</option>
             </select>
           </div>
+          <ImageUpload
+            value={getField('referenceImageUrl')}
+            onChange={(url) => setField('referenceImageUrl', url)}
+            label="Фото товара (необязательно)"
+            hint="Загрузите фото — AI заменит фон, сохранив товар. Без фото создаст образ с нуля."
+          />
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Описание</label>
             <textarea
@@ -372,18 +470,12 @@ export default function ScenarioForm({ slug, connections, onSubmit, loading, pri
       {/* infographic-generator */}
       {slug === 'infographic-generator' && (
         <>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              URL фотографии <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="url"
-              value={getField('photoUrl')}
-              onChange={(e) => setField('photoUrl', e.target.value)}
-              placeholder="https://example.com/photo.jpg"
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-          </div>
+          <ImageUpload
+            value={getField('photoUrl')}
+            onChange={(url) => setField('photoUrl', url)}
+            label="Фото товара *"
+            hint="Загрузите фото товара для создания инфографики"
+          />
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
               Характеристики (до 6 строк) <span className="text-red-500">*</span>
@@ -442,6 +534,246 @@ export default function ScenarioForm({ slug, connections, onSubmit, loading, pri
                   className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-sm"
                 />
               </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* multi-photo-studio */}
+      {slug === 'multi-photo-studio' && (
+        <>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Название товара <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={getField('productName')}
+              onChange={(e) => setField('productName', e.target.value)}
+              placeholder="Например: Кожаная сумка через плечо"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Стиль результата</label>
+            <select
+              value={getField('studioStyle') || 'studio-3d'}
+              onChange={(e) => setField('studioStyle', e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            >
+              <option value="studio-3d">Studio 3D — белый/серый фон, 3/4 вид</option>
+              <option value="floating">Floating — белый фон, парящий эффект</option>
+              <option value="dark-premium">Dark Premium — тёмный фон, люксовый стиль</option>
+            </select>
+          </div>
+          <div>
+            <p className="text-sm font-medium text-slate-700 mb-2">
+              Фотографии товара <span className="text-red-500">*</span>
+              <span className="text-slate-400 font-normal ml-1">(1–5 штук, разные ракурсы)</span>
+            </p>
+            <p className="text-xs text-slate-400 mb-3">
+              Загрузите фото спереди, сбоку, сзади — ИИ объединит их в профессиональный 3D-вид
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {photoUrls.map((url, i) => (
+                <ImageUpload
+                  key={i}
+                  value={url}
+                  onChange={(newUrl) => {
+                    const updated = [...photoUrls];
+                    updated[i] = newUrl;
+                    setPhotoUrls(updated);
+                  }}
+                  label={i === 0 ? 'Фото 1 — основное *' : `Фото ${i + 1} — дополнительное`}
+                />
+              ))}
+            </div>
+            {photoUrls.filter(Boolean).length > 0 && (
+              <p className="text-xs text-purple-600 mt-2">
+                {photoUrls.filter(Boolean).length} из 5 фото загружено
+              </p>
+            )}
+          </div>
+
+          {/* ── Enhancements ── */}
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowEnhancements((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors text-sm"
+            >
+              <span className="font-medium text-slate-700 flex items-center gap-2">
+                ✨ Дополнительные виды
+                {Object.values(enhancements).filter((e) => e.enabled).length > 0 && (
+                  <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">
+                    +{Object.values(enhancements).filter((e) => e.enabled).length}
+                  </span>
+                )}
+              </span>
+              <svg className={`w-4 h-4 text-slate-400 transition-transform ${showEnhancements ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {showEnhancements && (
+              <div className="divide-y divide-slate-100">
+
+                {/* Lifestyle */}
+                <div className="px-4 py-3 space-y-2">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" checked={enhancements.lifestyle.enabled}
+                      onChange={(e) => patchEnhancement('lifestyle', { enabled: e.target.checked })}
+                      className="h-4 w-4 text-purple-600 rounded border-slate-300" />
+                    <span className="text-sm font-medium text-slate-800">🏠 Lifestyle фото — товар в контексте</span>
+                  </label>
+                  {enhancements.lifestyle.enabled && (
+                    <div className="ml-7 space-y-2">
+                      <div className="flex flex-wrap gap-2">
+                        {LIFESTYLE_PRESETS.map((p) => (
+                          <button key={p} type="button"
+                            onClick={() => patchEnhancement('lifestyle', { setting: p })}
+                            className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${enhancements.lifestyle.setting === p ? 'bg-purple-600 text-white border-purple-600' : 'border-slate-300 text-slate-600 hover:border-purple-400'}`}>
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                      <input type="text" value={enhancements.lifestyle.setting ?? ''}
+                        onChange={(e) => patchEnhancement('lifestyle', { setting: e.target.value })}
+                        placeholder="Или напишите свой вариант: на пляже, в машине..."
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-purple-500" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Text overlay */}
+                <div className="px-4 py-3 space-y-2">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" checked={enhancements.textOverlay.enabled}
+                      onChange={(e) => patchEnhancement('textOverlay', { enabled: e.target.checked })}
+                      className="h-4 w-4 text-purple-600 rounded border-slate-300" />
+                    <span className="text-sm font-medium text-slate-800">🏷️ Текст на изображении — акция, название</span>
+                  </label>
+                  {enhancements.textOverlay.enabled && (
+                    <div className="ml-7 space-y-2">
+                      <input type="text" value={enhancements.textOverlay.text ?? ''}
+                        onChange={(e) => patchEnhancement('textOverlay', { text: e.target.value })}
+                        placeholder="Например: Скидка 20%, Хит продаж, Новинка 2025"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-purple-500" />
+                      <div className="flex gap-2">
+                        {[{ v: 'badge', l: 'Бейдж' }, { v: 'banner', l: 'Баннер' }, { v: 'price-tag', l: 'Ценник' }].map(({ v, l }) => (
+                          <button key={v} type="button"
+                            onClick={() => patchEnhancement('textOverlay', { textStyle: v })}
+                            className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${enhancements.textOverlay.textStyle === v ? 'bg-purple-600 text-white border-purple-600' : 'border-slate-300 text-slate-600 hover:border-purple-400'}`}>
+                            {l}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Seasonal */}
+                <div className="px-4 py-3 space-y-2">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" checked={enhancements.seasonal.enabled}
+                      onChange={(e) => patchEnhancement('seasonal', { enabled: e.target.checked })}
+                      className="h-4 w-4 text-purple-600 rounded border-slate-300" />
+                    <span className="text-sm font-medium text-slate-800">🎄 Сезонное / праздничное фото</span>
+                  </label>
+                  {enhancements.seasonal.enabled && (
+                    <div className="ml-7">
+                      <select value={enhancements.seasonal.season ?? 'new-year'}
+                        onChange={(e) => patchEnhancement('seasonal', { season: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-purple-500">
+                        {SEASONAL_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {/* Companion product */}
+                <div className="px-4 py-3 space-y-2">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" checked={enhancements.companion.enabled}
+                      onChange={(e) => patchEnhancement('companion', { enabled: e.target.checked })}
+                      className="h-4 w-4 text-purple-600 rounded border-slate-300" />
+                    <span className="text-sm font-medium text-slate-800">🛍️ С попутным товаром — комплект, сочетание</span>
+                  </label>
+                  {enhancements.companion.enabled && (
+                    <div className="ml-7">
+                      <input type="text" value={enhancements.companion.companion ?? ''}
+                        onChange={(e) => patchEnhancement('companion', { companion: e.target.value })}
+                        placeholder="Например: с чашкой кофе, со смартфоном, с ноутбуком"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-purple-500" />
+                      <p className="text-xs text-slate-400 mt-1">ИИ расположит товары рядом в профессиональной постановке</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Custom background */}
+                <div className="px-4 py-3 space-y-2">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" checked={enhancements.customBg.enabled}
+                      onChange={(e) => patchEnhancement('customBg', { enabled: e.target.checked })}
+                      className="h-4 w-4 text-purple-600 rounded border-slate-300" />
+                    <span className="text-sm font-medium text-slate-800">🎨 Кастомный фон — материал, цвет, текстура</span>
+                  </label>
+                  {enhancements.customBg.enabled && (
+                    <div className="ml-7">
+                      <input type="text" value={enhancements.customBg.bgDescription ?? ''}
+                        onChange={(e) => patchEnhancement('customBg', { bgDescription: e.target.value })}
+                        placeholder="Например: дубовый стол, мраморная плитка, бетонная стена"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-purple-500" />
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* niche-analysis */}
+      {slug === 'niche-analysis' && (
+        <>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Ключевое слово / ниша <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={getField('keyword')}
+              onChange={(e) => setField('keyword', e.target.value)}
+              placeholder="Например: беспроводные наушники, детские игрушки, кофемашина"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Маркетплейс</label>
+              <select
+                value={getField('platform') || 'wb'}
+                onChange={(e) => setField('platform', e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="wb">Wildberries</option>
+                <option value="ozon">Ozon</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Кол-во товаров для анализа</label>
+              <select
+                value={getField('limit') || '50'}
+                onChange={(e) => setField('limit', e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="30">30 товаров (быстро)</option>
+                <option value="50">50 товаров (рекомендуется)</option>
+                <option value="100">100 товаров (подробно)</option>
+              </select>
             </div>
           </div>
         </>
