@@ -167,23 +167,33 @@ export default function DashboardPage() {
 
       {/* Onboarding for new users */}
       {!loading && !hasConnections && (
-        <div className="bg-gradient-to-br from-purple-600 to-purple-800 rounded-2xl p-6 text-white">
-          <h2 className="font-bold text-lg mb-1">Начните за 3 шага</h2>
-          <p className="text-purple-200 text-sm mb-5">Первый результат — через 2 минуты после подключения магазина</p>
-          <div className="grid sm:grid-cols-3 gap-4">
+        <div className="bg-gradient-to-br from-purple-600 to-purple-800 rounded-2xl p-5 text-white">
+          <h2 className="font-bold text-lg mb-0.5">Начните за 3 шага</h2>
+          <p className="text-purple-200 text-sm mb-4">Первый результат — через 2 минуты после подключения</p>
+
+          {/* Steps — horizontal scroll on mobile, grid on desktop */}
+          <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 sm:grid sm:grid-cols-3 sm:overflow-visible">
             {[
-              { n: '1', title: 'Подключите магазин', desc: 'API-ключ WB, Ozon, YM или Мегамаркет', href: '/connections', cta: 'Подключить →' },
-              { n: '2', title: 'Откройте каталог', desc: 'Увидите Listing Score каждого товара', href: '/products', cta: 'Каталог →' },
-              { n: '3', title: 'Включите агентов', desc: 'Автоответы, мониторинг цен, SEO', href: '/automations', cta: 'Автоматизации →' },
+              { n: '1', title: 'Магазин', desc: 'API-ключ WB, Ozon, YM или Мегамаркет', href: '/connections' },
+              { n: '2', title: 'Каталог', desc: 'Listing Score каждого товара', href: '/products' },
+              { n: '3', title: 'Агенты', desc: 'Цены, SEO, ответы на отзывы', href: '/automations' },
             ].map((s) => (
-              <Link key={s.n} href={s.href} className="bg-white/10 hover:bg-white/20 rounded-xl p-4 transition-colors block">
-                <div className="w-7 h-7 rounded-full bg-white/20 text-white text-xs font-bold flex items-center justify-center mb-3">{s.n}</div>
-                <p className="font-semibold text-sm">{s.title}</p>
-                <p className="text-purple-200 text-xs mt-0.5 mb-3">{s.desc}</p>
-                <span className="text-xs font-medium text-purple-200">{s.cta}</span>
+              <Link key={s.n} href={s.href}
+                className="bg-white/10 hover:bg-white/20 rounded-xl p-3.5 transition-colors shrink-0 w-36 sm:w-auto">
+                <div className="w-6 h-6 rounded-full bg-white/20 text-white text-xs font-bold flex items-center justify-center mb-2">{s.n}</div>
+                <p className="font-semibold text-sm leading-tight">{s.title}</p>
+                <p className="text-purple-200 text-xs mt-1 leading-snug">{s.desc}</p>
               </Link>
             ))}
           </div>
+
+          <Link href="/connections"
+            className="mt-4 flex items-center justify-center gap-2 w-full py-3 bg-white text-purple-700 font-bold rounded-xl text-sm hover:bg-purple-50 transition-colors">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            Подключить магазин
+          </Link>
         </div>
       )}
 
