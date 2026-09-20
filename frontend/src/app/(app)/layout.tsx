@@ -7,6 +7,7 @@ import { getMe, getNotifications, markNotificationRead } from '@/lib/api';
 import type { StoredUser } from '@/lib/auth';
 import type { Notification } from '@/lib/api';
 import Sidebar from '@/components/Sidebar';
+import MobileNav from '@/components/MobileNav';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -153,10 +154,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             )}
           </div>
         </header>
-        <main className="flex-1 p-4 md:p-6 max-w-7xl w-full mx-auto">
+        <main className="flex-1 p-4 md:p-6 pb-20 md:pb-6 max-w-7xl w-full mx-auto">
           {children}
         </main>
       </div>
+      <MobileNav />
       {/* Close notifications overlay */}
       {showNotifications && (
         <div
