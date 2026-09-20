@@ -1,10 +1,21 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../auth/auth.middleware';
+import { checkFeatureAccess } from '../subscriptions/subscriptions.service';
 import { syncWarehouseStocks, getLatestStocks, upsertCatalogItem, getCatalog } from './warehouse.service';
 
 export const warehouseRouter = Router();
 warehouseRouter.use(authenticate);
+
+// All warehouse routes require 'start' plan or above
+warehouseRouter.use(async (req: Request, res: Response, next) => {
+  try {
+    await checkFeatureAccess(req.user!.userId, 'warehouse');
+    next();
+  } catch (err: any) {
+    res.status(err.status || 403).json({ error: err.message });
+  }
+});
 
 // GET /api/warehouse/stocks — latest snapshot grouped by sku/warehouse
 warehouseRouter.get('/stocks', async (req: Request, res: Response) => {

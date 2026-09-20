@@ -1,9 +1,20 @@
 import { Router, Request, Response } from 'express';
 import { authenticate } from '../auth/auth.middleware';
+import { checkFeatureAccess } from '../subscriptions/subscriptions.service';
 import { syncFinanceRecords, getFinanceSummary, getFinanceRecords } from './finance.service';
 
 export const financeRouter = Router();
 financeRouter.use(authenticate);
+
+// All finance routes require 'business' plan
+financeRouter.use(async (req: Request, res: Response, next) => {
+  try {
+    await checkFeatureAccess(req.user!.userId, 'finance');
+    next();
+  } catch (err: any) {
+    res.status(err.status || 403).json({ error: err.message });
+  }
+});
 
 function defaultDateRange() {
   const to = new Date();
