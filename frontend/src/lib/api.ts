@@ -623,7 +623,7 @@ export interface OrderLine {
 
 export interface MarketplaceOrder {
   id: string;
-  platform: 'wb' | 'ozon';
+  platform: 'wb' | 'ozon' | 'ym' | 'mm';
   status: string;
   createdAt: string;
   items: OrderLine[];
@@ -680,5 +680,29 @@ export async function shipOzonOrder(data: { connectionId: string; postingNumber:
 export async function getOzonLabel(data: { connectionId: string; postingNumbers: string[] }): Promise<{ pdf: string }> {
   const res = await apiFetch('/api/orders/ozon/label', { method: 'POST', body: JSON.stringify(data) });
   if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'Ошибка получения ярлыка'); }
+  return res.json();
+}
+
+export async function getYmLabel(data: { connectionId: string; orderId: string }): Promise<{ pdf: string }> {
+  const res = await apiFetch('/api/orders/ym/label', { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'Ошибка получения ярлыка'); }
+  return res.json();
+}
+
+export async function confirmYmOrder(data: { connectionId: string; orderId: string }): Promise<{ ok: boolean }> {
+  const res = await apiFetch('/api/orders/ym/confirm', { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'Ошибка подтверждения'); }
+  return res.json();
+}
+
+export async function getMmLabel(data: { connectionId: string; orderId: string }): Promise<{ pdf: string }> {
+  const res = await apiFetch('/api/orders/mm/label', { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'Ошибка получения ярлыка'); }
+  return res.json();
+}
+
+export async function confirmMmOrder(data: { connectionId: string; orderId: string }): Promise<{ ok: boolean }> {
+  const res = await apiFetch('/api/orders/mm/confirm', { method: 'POST', body: JSON.stringify(data) });
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'Ошибка подтверждения'); }
   return res.json();
 }

@@ -4,6 +4,8 @@ import { getUserConnections, getConnectionById } from '../connections/connection
 import { createAdapter } from '../../integrations/marketplace/factory';
 import { WbAdapter } from '../../integrations/marketplace/wb/wb.adapter';
 import { OzonAdapter } from '../../integrations/marketplace/ozon/ozon.adapter';
+import { YmAdapter } from '../../integrations/marketplace/ym/ym.adapter';
+import { MmAdapter } from '../../integrations/marketplace/mm/mm.adapter';
 
 export const ordersRouter = Router();
 ordersRouter.use(authenticate);
@@ -195,6 +197,86 @@ ordersRouter.post('/ozon/sticker', async (req: Request, res: Response) => {
     const adapter = createAdapter('ozon', conn.credentials_enc) as OzonAdapter;
     const pdfBase64 = await adapter.getProductSticker(postingNumber, skus);
     res.json({ pdf: pdfBase64 });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Yandex Market FBS flow ----
+
+// POST /api/orders/ym/label  — get PDF label for YM order
+ordersRouter.post('/ym/label', async (req: Request, res: Response) => {
+  const { connectionId, orderId } = req.body;
+  if (!connectionId || !orderId) {
+    res.status(400).json({ error: 'connectionId and orderId required' }); return;
+  }
+  const conn = await safeGetConn(connectionId, req.user!.userId, res);
+  if (!conn) return;
+  if (conn.platform !== 'ym') { res.status(400).json({ error: 'YM connection required' }); return; }
+
+  try {
+    const adapter = createAdapter('ym', conn.credentials_enc) as YmAdapter;
+    const pdf = await adapter.getOrderLabel(orderId);
+    res.json({ pdf });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/orders/ym/confirm  — confirm order ready to ship
+ordersRouter.post('/ym/confirm', async (req: Request, res: Response) => {
+  const { connectionId, orderId } = req.body;
+  if (!connectionId || !orderId) {
+    res.status(400).json({ error: 'connectionId and orderId required' }); return;
+  }
+  const conn = await safeGetConn(connectionId, req.user!.userId, res);
+  if (!conn) return;
+  if (conn.platform !== 'ym') { res.status(400).json({ error: 'YM connection required' }); return; }
+
+  try {
+    const adapter = createAdapter('ym', conn.credentials_enc) as YmAdapter;
+    await adapter.confirmOrderShipment(orderId);
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Megamarket FBS flow ----
+
+// POST /api/orders/mm/label  — get PDF label for MM order
+ordersRouter.post('/mm/label', async (req: Request, res: Response) => {
+  const { connectionId, orderId } = req.body;
+  if (!connectionId || !orderId) {
+    res.status(400).json({ error: 'connectionId and orderId required' }); return;
+  }
+  const conn = await safeGetConn(connectionId, req.user!.userId, res);
+  if (!conn) return;
+  if (conn.platform !== 'mm') { res.status(400).json({ error: 'MM connection required' }); return; }
+
+  try {
+    const adapter = createAdapter('mm', conn.credentials_enc) as MmAdapter;
+    const pdf = await adapter.getOrderLabel(orderId);
+    res.json({ pdf });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/orders/mm/confirm  — confirm MM order
+ordersRouter.post('/mm/confirm', async (req: Request, res: Response) => {
+  const { connectionId, orderId } = req.body;
+  if (!connectionId || !orderId) {
+    res.status(400).json({ error: 'connectionId and orderId required' }); return;
+  }
+  const conn = await safeGetConn(connectionId, req.user!.userId, res);
+  if (!conn) return;
+  if (conn.platform !== 'mm') { res.status(400).json({ error: 'MM connection required' }); return; }
+
+  try {
+    const adapter = createAdapter('mm', conn.credentials_enc) as MmAdapter;
+    await adapter.confirmOrder(orderId);
+    res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

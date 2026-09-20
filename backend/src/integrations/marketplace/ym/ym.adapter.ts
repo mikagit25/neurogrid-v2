@@ -236,6 +236,23 @@ export class YmAdapter implements MarketplaceAdapter {
     }
   }
 
+  // ---- FBS-specific (YM only) ----
+
+  async getOrderLabel(orderId: string): Promise<string> {
+    const resp = await this.client.get(
+      `/campaigns/${this.campaignId}/orders/${orderId}/delivery/labels`,
+      { responseType: 'arraybuffer' },
+    );
+    return Buffer.from(resp.data as ArrayBuffer).toString('base64');
+  }
+
+  async confirmOrderShipment(orderId: string): Promise<void> {
+    await this.client.put(
+      `/campaigns/${this.campaignId}/orders/${orderId}/status`,
+      { order: { status: 'PROCESSING', substatus: 'READY_TO_SHIP' } },
+    );
+  }
+
   async getNewOrders(): Promise<MarketplaceOrder[]> {
     return this._getOrders('PROCESSING,PENDING');
   }

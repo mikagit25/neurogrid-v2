@@ -5,6 +5,8 @@ import {
   getOrders, getConnections,
   createWbSupply, getWbSupplyBarcode, getWbOrderStickers, closeWbSupply,
   shipOzonOrder, getOzonLabel,
+  getYmLabel, confirmYmOrder,
+  getMmLabel, confirmMmOrder,
 } from '@/lib/api';
 import type { MarketplaceOrder, Connection } from '@/lib/api';
 
@@ -231,6 +233,122 @@ function OzonOrderRow({ order, onRefresh }: { order: MarketplaceOrder; onRefresh
   );
 }
 
+// ---- YM order row ----
+function YmOrderRow({ order, onRefresh }: { order: MarketplaceOrder; onRefresh: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [labelLoading, setLabelLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleLabel() {
+    setLabelLoading(true); setError('');
+    try {
+      const { pdf } = await getYmLabel({ connectionId: order.connectionId, orderId: order.id });
+      openBase64(pdf, 'application/pdf');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка'); }
+    finally { setLabelLoading(false); }
+  }
+
+  async function handleConfirm() {
+    setConfirming(true); setError('');
+    try {
+      await confirmYmOrder({ connectionId: order.connectionId, orderId: order.id });
+      onRefresh();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка'); }
+    finally { setConfirming(false); }
+  }
+
+  return (
+    <div className="p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-mono text-slate-500">#{order.id}</span>
+          {statusBadge(order.status)}
+          <span className="text-xs text-slate-400">{order.createdAt ? new Date(order.createdAt).toLocaleDateString('ru-RU') : ''}</span>
+        </div>
+        <div className="mt-1 space-y-0.5">
+          {order.items.map((item, i) => (
+            <p key={i} className="text-sm text-slate-800">
+              {item.title || item.offerId} <span className="text-slate-500">× {item.quantity}</span>
+              <span className="ml-2 font-medium">{item.price.toLocaleString('ru-RU')} ₽</span>
+            </p>
+          ))}
+        </div>
+        {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <button onClick={handleLabel} disabled={labelLoading}
+          className="px-3 py-1.5 border border-slate-300 hover:bg-slate-50 rounded-lg text-xs font-medium text-slate-700 transition-colors disabled:opacity-50">
+          {labelLoading ? '...' : '🏷 Ярлык PDF'}
+        </button>
+        {(order.status === 'PROCESSING' || order.status === 'PENDING') && (
+          <button onClick={handleConfirm} disabled={confirming}
+            className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
+            {confirming ? 'Подтверждаем...' : '✓ Готов к отправке'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---- MM order row ----
+function MmOrderRow({ order, onRefresh }: { order: MarketplaceOrder; onRefresh: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [labelLoading, setLabelLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleLabel() {
+    setLabelLoading(true); setError('');
+    try {
+      const { pdf } = await getMmLabel({ connectionId: order.connectionId, orderId: order.id });
+      openBase64(pdf, 'application/pdf');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка'); }
+    finally { setLabelLoading(false); }
+  }
+
+  async function handleConfirm() {
+    setConfirming(true); setError('');
+    try {
+      await confirmMmOrder({ connectionId: order.connectionId, orderId: order.id });
+      onRefresh();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка'); }
+    finally { setConfirming(false); }
+  }
+
+  return (
+    <div className="p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-mono text-slate-500">#{order.id}</span>
+          {statusBadge(order.status)}
+          <span className="text-xs text-slate-400">{order.createdAt ? new Date(order.createdAt).toLocaleDateString('ru-RU') : ''}</span>
+        </div>
+        <div className="mt-1 space-y-0.5">
+          {order.items.map((item, i) => (
+            <p key={i} className="text-sm text-slate-800">
+              {item.title || item.offerId} <span className="text-slate-500">× {item.quantity}</span>
+              <span className="ml-2 font-medium">{item.price.toLocaleString('ru-RU')} ₽</span>
+            </p>
+          ))}
+        </div>
+        {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <button onClick={handleLabel} disabled={labelLoading}
+          className="px-3 py-1.5 border border-slate-300 hover:bg-slate-50 rounded-lg text-xs font-medium text-slate-700 transition-colors disabled:opacity-50">
+          {labelLoading ? '...' : '🏷 Ярлык PDF'}
+        </button>
+        {(order.status === 'CONFIRMED' || order.status === 'PROCESSING') && (
+          <button onClick={handleConfirm} disabled={confirming}
+            className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
+            {confirming ? 'Подтверждаем...' : '✓ Подтвердить заказ'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---- Main page ----
 export default function OrdersPage() {
   const [orders, setOrders] = useState<MarketplaceOrder[]>([]);
@@ -262,6 +380,8 @@ export default function OrdersPage() {
 
   const wbOrders = orders.filter((o) => o.platform === 'wb');
   const ozonOrders = orders.filter((o) => o.platform === 'ozon');
+  const ymOrders = orders.filter((o) => o.platform === 'ym');
+  const mmOrders = orders.filter((o) => o.platform === 'mm');
 
   function toggleWb(id: string) {
     setSelectedWb((prev) => {
@@ -299,7 +419,7 @@ export default function OrdersPage() {
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Заказы и отгрузка</h1>
-          <p className="text-slate-500 mt-1">FBS-заказы с WB и Ozon, поставки, наклейки, ярлыки</p>
+          <p className="text-slate-500 mt-1">FBS-заказы с WB, Ozon, Яндекс Маркета и Мегамаркета — поставки, наклейки, ярлыки</p>
         </div>
         <div className="flex items-center gap-2">
           <select
@@ -411,6 +531,42 @@ export default function OrdersPage() {
               <div className="divide-y divide-slate-50">
                 {ozonOrders.map((order) => (
                   <OzonOrderRow key={order.id} order={order} onRefresh={load} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* YM section */}
+          {ymOrders.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
+                <span className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center text-xs font-bold text-yellow-700">YM</span>
+                <div>
+                  <h2 className="font-semibold text-slate-800">Яндекс Маркет FBS</h2>
+                  <p className="text-xs text-slate-500">{ymOrders.length} заказов</p>
+                </div>
+              </div>
+              <div className="divide-y divide-slate-50">
+                {ymOrders.map((order) => (
+                  <YmOrderRow key={order.id} order={order} onRefresh={load} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* MM section */}
+          {mmOrders.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
+                <span className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center text-xs font-bold text-green-700">MM</span>
+                <div>
+                  <h2 className="font-semibold text-slate-800">Мегамаркет FBS</h2>
+                  <p className="text-xs text-slate-500">{mmOrders.length} заказов</p>
+                </div>
+              </div>
+              <div className="divide-y divide-slate-50">
+                {mmOrders.map((order) => (
+                  <MmOrderRow key={order.id} order={order} onRefresh={load} />
                 ))}
               </div>
             </div>

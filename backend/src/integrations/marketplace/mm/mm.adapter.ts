@@ -272,6 +272,24 @@ export class MmAdapter implements MarketplaceAdapter {
     }
   }
 
+  // ---- FBS-specific (MM only) ----
+
+  async getOrderLabel(orderId: string): Promise<string> {
+    const resp = await this.client.post(
+      '/order/getLabel',
+      { merchantId: this.merchantId, orderId },
+      { responseType: 'arraybuffer' },
+    );
+    return Buffer.from(resp.data as ArrayBuffer).toString('base64');
+  }
+
+  async confirmOrder(orderId: string): Promise<void> {
+    await this.client.post('/order/confirm', {
+      merchantId: this.merchantId,
+      orderId,
+    });
+  }
+
   async getNewOrders(): Promise<MarketplaceOrder[]> {
     return this._getOrders(['CONFIRMED', 'PROCESSING']);
   }
