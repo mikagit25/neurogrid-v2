@@ -1,6 +1,8 @@
 import { db } from '../../db';
 import { syncWarehouseStocks } from '../../modules/warehouse/warehouse.service';
 import { syncFinanceRecords } from '../../modules/finance/finance.service';
+import { sendDailyDigest } from '../../utils/mailer';
+import { config } from '../../config';
 
 const LOW_STOCK_THRESHOLD = 10;
 
@@ -97,11 +99,88 @@ export async function runFinanceSync() {
   }
 }
 
+export async function runDailyDigest(): Promise<void> {
+  const { rows: users } = await db.query<{ id: string; email: string }>(
+    `SELECT u.id, u.email
+     FROM users u
+     WHERE u.digest_enabled = true
+       AND EXISTS (
+         SELECT 1 FROM marketplace_connections mc
+         WHERE mc.user_id = u.id AND mc.status = 'active'
+       )`,
+  );
+
+  console.log(`[digest] sending to ${users.length} users`);
+
+  for (const user of users) {
+    try {
+      const [revRow, platformRows, alertRows, unreadRow] = await Promise.all([
+        db.query<{ total_revenue: string; total_net_payout: string; total_qty: string }>(
+          `SELECT COALESCE(SUM(revenue),0)::numeric AS total_revenue,
+                  COALESCE(SUM(net_payout),0)::numeric AS total_net_payout,
+                  COALESCE(SUM(quantity),0)::int AS total_qty
+           FROM finance_records
+           WHERE user_id = $1 AND period_from >= now()::date - interval '7 days'`,
+          [user.id],
+        ),
+        db.query<{ platform: string; revenue: string; net_payout: string }>(
+          `SELECT platform,
+                  COALESCE(SUM(revenue),0)::numeric AS revenue,
+                  COALESCE(SUM(net_payout),0)::numeric AS net_payout
+           FROM finance_records
+           WHERE user_id = $1 AND period_from >= now()::date - interval '7 days'
+           GROUP BY platform ORDER BY SUM(revenue) DESC`,
+          [user.id],
+        ),
+        db.query<{ platform: string; sku: string; title: string; qty: number }>(
+          `SELECT platform, sku, title, SUM(quantity)::int AS qty
+           FROM stock_snapshots
+           WHERE user_id = $1 AND snapped_at > now() - interval '3 hours'
+           GROUP BY platform, sku, title
+           HAVING SUM(quantity) <= 10
+           ORDER BY SUM(quantity) ASC
+           LIMIT 10`,
+          [user.id],
+        ),
+        db.query<{ unread: number }>(
+          `SELECT COUNT(*)::int AS unread FROM notifications WHERE user_id = $1 AND is_read = false`,
+          [user.id],
+        ),
+      ]);
+
+      await sendDailyDigest(user.email, {
+        revenue7d:   Number(revRow.rows[0]?.total_revenue ?? 0),
+        netPayout7d: Number(revRow.rows[0]?.total_net_payout ?? 0),
+        qty7d:       Number(revRow.rows[0]?.total_qty ?? 0),
+        byPlatform:  platformRows.rows.map((r) => ({ platform: r.platform, revenue: Number(r.revenue), netPayout: Number(r.net_payout) })),
+        stockAlerts: alertRows.rows.map((r) => ({ title: r.title || r.sku, platform: r.platform, qty: r.qty })),
+        unread:      Number(unreadRow.rows[0]?.unread ?? 0),
+        appUrl:      config.frontendUrl,
+      });
+    } catch (err) {
+      console.error(`[digest] error for user=${user.id}:`, err);
+    }
+  }
+}
+
+function msUntilNext8AM(): number {
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(8, 0, 0, 0);
+  if (next <= now) next.setDate(next.getDate() + 1);
+  return next.getTime() - now.getTime();
+}
+
 export function startSyncWorker() {
   // Stock: every hour
   setInterval(() => { runStockSync().catch(console.error); }, 60 * 60 * 1000);
   // Finance: every 6 hours
   setInterval(() => { runFinanceSync().catch(console.error); }, 6 * 60 * 60 * 1000);
+  // Digest: daily at 08:00
+  setTimeout(() => {
+    runDailyDigest().catch(console.error);
+    setInterval(() => { runDailyDigest().catch(console.error); }, 24 * 60 * 60 * 1000);
+  }, msUntilNext8AM());
 
   // Run once on startup after 30s delay
   setTimeout(() => { runStockSync().catch(console.error); }, 30_000);

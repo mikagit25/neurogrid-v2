@@ -263,6 +263,19 @@ export async function markNotificationRead(id: string): Promise<void> {
   await apiFetch(`/api/notifications/${id}/read`, { method: 'POST' });
 }
 
+export async function getDigestSettings(): Promise<{ digestEnabled: boolean }> {
+  const res = await apiFetch('/api/notifications/digest-settings');
+  if (!res.ok) return { digestEnabled: true };
+  return res.json();
+}
+
+export async function updateDigestSettings(enabled: boolean): Promise<void> {
+  await apiFetch('/api/notifications/digest-settings', {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled }),
+  });
+}
+
 // ---- Products ----
 
 export interface ScoredProduct {

@@ -22,3 +22,23 @@ notificationsRouter.post('/:id/read', async (req: Request, res: Response) => {
   );
   res.json({ ok: true });
 });
+
+// GET /api/notifications/digest-settings
+notificationsRouter.get('/digest-settings', async (req: Request, res: Response) => {
+  const { rows } = await db.query(
+    'SELECT digest_enabled FROM users WHERE id = $1',
+    [req.user!.userId],
+  );
+  res.json({ digestEnabled: rows[0]?.digest_enabled ?? true });
+});
+
+// PATCH /api/notifications/digest-settings
+notificationsRouter.patch('/digest-settings', async (req: Request, res: Response) => {
+  const { enabled } = req.body;
+  if (typeof enabled !== 'boolean') { res.status(400).json({ error: 'enabled must be boolean' }); return; }
+  await db.query(
+    'UPDATE users SET digest_enabled = $1 WHERE id = $2',
+    [enabled, req.user!.userId],
+  );
+  res.json({ ok: true, digestEnabled: enabled });
+});

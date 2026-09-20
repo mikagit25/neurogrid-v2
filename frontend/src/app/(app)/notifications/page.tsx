@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { getNotifications, markNotificationRead } from '@/lib/api';
+import { getNotifications, markNotificationRead, getDigestSettings, updateDigestSettings } from '@/lib/api';
 import type { Notification } from '@/lib/api';
 
 const TYPE_META: Record<string, { icon: string; color: string; label: string }> = {
@@ -34,17 +34,32 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [digestEnabled, setDigestEnabled] = useState(true);
+  const [digestSaving, setDigestSaving] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const data = await getNotifications();
+      const [data, digestSettings] = await Promise.all([
+        getNotifications(),
+        getDigestSettings(),
+      ]);
       setNotifications(data);
+      setDigestEnabled(digestSettings.digestEnabled);
     } catch {
       // ignore
     } finally {
       setLoading(false);
     }
   }, []);
+
+  async function handleDigestToggle(enabled: boolean) {
+    setDigestSaving(true);
+    try {
+      await updateDigestSettings(enabled);
+      setDigestEnabled(enabled);
+    } catch { /* ignore */ }
+    finally { setDigestSaving(false); }
+  }
 
   useEffect(() => { load(); }, [load]);
 
@@ -128,7 +143,7 @@ export default function NotificationsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Уведомления</h1>
           <p className="text-slate-500 mt-1">Результаты автоматизаций и черновики для публикации</p>
@@ -140,6 +155,39 @@ export default function NotificationsPage() {
           >
             Отметить все как прочитанные ({unreadCount})
           </button>
+        )}
+      </div>
+
+      {/* Digest settings card */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center shrink-0">
+              <span className="text-lg">📧</span>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-800">Email-дайджест</p>
+              <p className="text-sm text-slate-500 mt-0.5">
+                Ежедневное письмо в 8:00 — выручка, остатки склада, новые уведомления
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => handleDigestToggle(!digestEnabled)}
+            disabled={digestSaving}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${
+              digestEnabled ? 'bg-purple-600' : 'bg-slate-200'
+            }`}
+          >
+            <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ${
+              digestEnabled ? 'translate-x-5' : 'translate-x-0'
+            }`} />
+          </button>
+        </div>
+        {digestEnabled && (
+          <p className="text-xs text-slate-400 mt-3 ml-13">
+            Дайджест отправляется на email вашего аккаунта каждое утро в 08:00
+          </p>
         )}
       </div>
 
