@@ -4,7 +4,7 @@ export interface ScoredProduct extends ProductInfo {
   score: number;           // 0–100
   scoreLabel: 'excellent' | 'good' | 'average' | 'poor';
   issues: string[];
-  platform: 'wb' | 'ozon';
+  platform: 'wb' | 'ozon' | 'ym' | 'mm';
   connectionId: string;
 }
 
@@ -19,7 +19,7 @@ function countKeywords(text: string): number {
   return unique.size;
 }
 
-export function scoreProduct(product: ProductInfo, platform: 'wb' | 'ozon'): { score: number; issues: string[] } {
+export function scoreProduct(product: ProductInfo, platform: 'wb' | 'ozon' | 'ym' | 'mm'): { score: number; issues: string[] } {
   let score = 0;
   const issues: string[] = [];
 

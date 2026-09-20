@@ -67,3 +67,22 @@ productsRouter.get('/', async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// PATCH /api/products/price — inline price update from catalog
+productsRouter.patch('/price', async (req: Request, res: Response) => {
+  const { connectionId, sku, price } = req.body;
+  if (!connectionId || !sku || typeof price !== 'number' || price <= 0) {
+    res.status(400).json({ error: 'connectionId, sku and price required' });
+    return;
+  }
+
+  try {
+    const conn = await getConnectionById(connectionId, req.user!.userId);
+    if (!conn) { res.status(404).json({ error: 'Connection not found' }); return; }
+    const adapter = createAdapter(conn.platform, conn.credentials_enc);
+    await adapter.updatePrice(sku, price);
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});

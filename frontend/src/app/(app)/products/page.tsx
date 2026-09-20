@@ -2,8 +2,15 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { getProducts, getConnections } from '@/lib/api';
+import { getProducts, getConnections, updateProductPrice } from '@/lib/api';
 import type { ScoredProduct, ProductSummary, Connection } from '@/lib/api';
+
+const PLATFORM_BADGE: Record<string, { label: string; cls: string }> = {
+  wb:   { label: 'WB',              cls: 'bg-pink-50 text-pink-700 border-pink-200' },
+  ozon: { label: 'Ozon',            cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  ym:   { label: 'Яндекс',          cls: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
+  mm:   { label: 'Мегамаркет',      cls: 'bg-green-50 text-green-700 border-green-200' },
+};
 
 const SCORE_COLORS: Record<string, { bar: string; badge: string; label: string }> = {
   excellent: { bar: 'bg-green-500',  badge: 'bg-green-50 text-green-700 border-green-200',  label: 'Отлично' },
@@ -33,6 +40,59 @@ function SummaryCard({ label, count, color }: { label: string; count: number; co
   );
 }
 
+function InlinePriceEdit({ product, onSaved }: { product: ScoredProduct; onSaved: (newPrice: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(product.price));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function save() {
+    const p = Number(value);
+    if (!p || p <= 0) { setError('Укажите корректную цену'); return; }
+    setSaving(true); setError('');
+    try {
+      await updateProductPrice({ connectionId: product.connectionId, sku: product.sku, price: p });
+      onSaved(p);
+      setEditing(false);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка'); }
+    finally { setSaving(false); }
+  }
+
+  if (!editing) {
+    return (
+      <button onClick={() => setEditing(true)} className="text-right group">
+        <p className="text-sm font-semibold text-slate-800 group-hover:text-purple-600 transition-colors">
+          {product.price.toLocaleString('ru-RU')} ₽
+          <span className="ml-1 text-xs text-slate-300 group-hover:text-purple-400">✏</span>
+        </p>
+        <p className="text-xs text-slate-400">{product.stock} шт.</p>
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1 min-w-[110px]">
+      <div className="flex items-center gap-1">
+        <input
+          autoFocus
+          type="number"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false); }}
+          className="w-20 px-2 py-1 border border-purple-400 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-purple-500"
+        />
+        <span className="text-xs text-slate-500">₽</span>
+        <button onClick={save} disabled={saving}
+          className="px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded transition-colors disabled:opacity-50">
+          {saving ? '...' : '✓'}
+        </button>
+        <button onClick={() => setEditing(false)} className="px-2 py-1 border border-slate-200 text-slate-500 hover:bg-slate-50 text-xs rounded transition-colors">✕</button>
+      </div>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
 export default function ProductsPage() {
   const router = useRouter();
   const [products, setProducts] = useState<ScoredProduct[]>([]);
@@ -42,6 +102,7 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<'all' | 'poor' | 'average' | 'good' | 'excellent'>('all');
+  const [priceOverrides, setPriceOverrides] = useState<Record<string, number>>({});
 
   const load = useCallback(async (connId?: string) => {
     setLoading(true);
@@ -54,6 +115,7 @@ export default function ProductsPage() {
       setProducts(p);
       setSummary(s);
       setConnections(conns);
+      setPriceOverrides({});
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка загрузки');
     } finally {
@@ -107,7 +169,7 @@ export default function ProductsPage() {
       <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
         <div className="text-5xl mb-4">🔌</div>
         <h2 className="text-lg font-semibold text-slate-800 mb-2">Подключите магазин</h2>
-        <p className="text-slate-500 text-sm mb-6">Чтобы видеть товары и их оценки, добавьте API-ключ WildBerries или Ozon</p>
+        <p className="text-slate-500 text-sm mb-6">Подключите WildBerries, Ozon, Яндекс Маркет или Мегамаркет чтобы видеть товары и их оценки</p>
         <a href="/connections" className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-600 text-white font-medium rounded-xl hover:bg-purple-700 transition-colors text-sm">
           Подключить магазин
         </a>
@@ -192,6 +254,9 @@ export default function ProductsPage() {
         <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-50">
           {filtered.map((p) => {
             const c = SCORE_COLORS[p.scoreLabel];
+            const pb = PLATFORM_BADGE[p.platform] ?? { label: p.platform.toUpperCase(), cls: 'bg-slate-50 text-slate-700 border-slate-200' };
+            const displayPrice = priceOverrides[`${p.connectionId}:${p.sku}`] ?? p.price;
+            const displayProduct = { ...p, price: displayPrice };
             return (
               <div key={`${p.platform}-${p.sku}`} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4">
                 {/* Photo thumbnail */}
@@ -200,7 +265,6 @@ export default function ProductsPage() {
                     <img src={p.photoUrls[0]} alt={p.title} className="w-full h-full object-cover" />
                   </div>
                 ) : (
-                  /* Score badge when no photo */
                   <div className={`shrink-0 w-14 h-14 rounded-xl border flex flex-col items-center justify-center ${c.badge}`}>
                     <span className="text-lg font-bold leading-none">{p.score}</span>
                     <span className="text-xs font-medium mt-0.5">{c.label}</span>
@@ -211,10 +275,8 @@ export default function ProductsPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start gap-2 flex-wrap">
                     <p className="font-medium text-slate-900 truncate max-w-xs sm:max-w-md">{p.title || `Арт. ${p.sku}`}</p>
-                    <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
-                      p.platform === 'wb' ? 'bg-pink-50 text-pink-700 border-pink-200' : 'bg-blue-50 text-blue-700 border-blue-200'
-                    }`}>
-                      {p.platform === 'wb' ? 'WB' : 'Ozon'} · {p.sku}
+                    <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${pb.cls}`}>
+                      {pb.label} · {p.sku}
                     </span>
                     {p.photoUrls?.[0] && (
                       <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${c.badge}`}>
@@ -237,10 +299,12 @@ export default function ProductsPage() {
                 </div>
 
                 {/* Price + Stock + CTA */}
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="text-right hidden sm:block">
-                    <p className="text-sm font-semibold text-slate-800">{p.price.toLocaleString('ru-RU')} ₽</p>
-                    <p className="text-xs text-slate-400">{p.stock} шт.</p>
+                <div className="flex items-center gap-3 shrink-0">
+                  <div className="hidden sm:block">
+                    <InlinePriceEdit
+                      product={displayProduct}
+                      onSaved={(newPrice) => setPriceOverrides((prev) => ({ ...prev, [`${p.connectionId}:${p.sku}`]: newPrice }))}
+                    />
                   </div>
                   {p.scoreLabel !== 'excellent' && (
                     <button

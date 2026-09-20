@@ -276,7 +276,7 @@ export interface ScoredProduct {
   score: number;
   scoreLabel: 'excellent' | 'good' | 'average' | 'poor';
   issues: string[];
-  platform: 'wb' | 'ozon';
+  platform: 'wb' | 'ozon' | 'ym' | 'mm';
   connectionId: string;
 }
 
@@ -287,6 +287,12 @@ export interface ProductSummary {
   good: number;
   excellent: number;
   avgScore: number;
+}
+
+export async function updateProductPrice(data: { connectionId: string; sku: string; price: number }): Promise<{ ok: boolean }> {
+  const res = await apiFetch('/api/products/price', { method: 'PATCH', body: JSON.stringify(data) });
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'Ошибка обновления цены'); }
+  return res.json();
 }
 
 export async function getProducts(connectionId?: string, limit?: number): Promise<{ products: ScoredProduct[]; summary: ProductSummary }> {
