@@ -44,9 +44,10 @@ function RevenueChart({ data, height = 140 }: { data: SalesDayChart[]; height?: 
 
   const wbPoints = data.map((d, i) => `${px(i)},${py(d.wb)}`).join(' ');
   const ozPoints = data.map((d, i) => `${px(i)},${py(d.ozon)}`).join(' ');
+  const ymPoints = data.map((d, i) => `${px(i)},${py(d.ym ?? 0)}`).join(' ');
+  const mmPoints = data.map((d, i) => `${px(i)},${py(d.mm ?? 0)}`).join(' ');
   const totalPoints = data.map((d, i) => `${px(i)},${py(d.total)}`).join(' ');
 
-  // Area fill paths
   const areaPath = (points: { x: number; y: number }[], color: string) => {
     if (!points.length) return null;
     const d = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
@@ -56,25 +57,26 @@ function RevenueChart({ data, height = 140 }: { data: SalesDayChart[]; height?: 
 
   const wbPts = data.map((d, i) => ({ x: px(i), y: py(d.wb) }));
   const ozPts = data.map((d, i) => ({ x: px(i), y: py(d.ozon) }));
+  const ymPts = data.map((d, i) => ({ x: px(i), y: py(d.ym ?? 0) }));
+  const mmPts = data.map((d, i) => ({ x: px(i), y: py(d.mm ?? 0) }));
 
-  // X axis labels — show only 5-6 evenly spaced
   const labelIdxs = n <= 7 ? data.map((_, i) => i) : [0, Math.floor(n / 4), Math.floor(n / 2), Math.floor(3 * n / 4), n - 1];
 
   return (
     <svg viewBox={`0 0 ${W} ${height}`} className="w-full" style={{ height }}>
-      {/* Grid lines */}
       {[0.25, 0.5, 0.75, 1].map((t) => (
         <line key={t} x1={PAD_L} y1={PAD_T + chartH * (1 - t)} x2={W - PAD_R} y2={PAD_T + chartH * (1 - t)}
           stroke="#e2e8f0" strokeWidth="1" />
       ))}
-      {/* Area fills */}
       {areaPath(wbPts, '#818cf8')}
       {areaPath(ozPts, '#34d399')}
-      {/* Lines */}
+      {areaPath(ymPts, '#fbbf24')}
+      {areaPath(mmPts, '#4ade80')}
       <polyline points={wbPoints} fill="none" stroke="#818cf8" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
       <polyline points={ozPoints} fill="none" stroke="#10b981" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      <polyline points={ymPoints} fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      <polyline points={mmPoints} fill="none" stroke="#22c55e" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
       <polyline points={totalPoints} fill="none" stroke="#94a3b8" strokeWidth="1" strokeDasharray="4 3" strokeLinejoin="round" />
-      {/* X labels */}
       {labelIdxs.map((i) => (
         <text key={i} x={px(i)} y={height - 2} textAnchor="middle" fontSize="11" fill="#94a3b8">
           {data[i].date.slice(5)}
@@ -131,7 +133,9 @@ export default function AnalyticsPage() {
   const s = data?.summary;
   const byWb = data?.byPlatform.wb;
   const byOzon = data?.byPlatform.ozon;
-  const totalRev = (byWb?.revenue ?? 0) + (byOzon?.revenue ?? 0);
+  const byYm = data?.byPlatform.ym;
+  const byMm = data?.byPlatform.mm;
+  const totalRev = (byWb?.revenue ?? 0) + (byOzon?.revenue ?? 0) + (byYm?.revenue ?? 0) + (byMm?.revenue ?? 0);
 
   return (
     <div className="space-y-6">
@@ -182,9 +186,11 @@ export default function AnalyticsPage() {
           <div className="bg-white border border-slate-200 rounded-2xl p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-slate-800">Выручка по дням</h2>
-              <div className="flex items-center gap-4 text-xs text-slate-500">
+              <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
                 <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-indigo-400 rounded inline-block" />WB</span>
                 <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-emerald-500 rounded inline-block" />Ozon</span>
+                {(byYm?.revenue ?? 0) > 0 && <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-amber-400 rounded inline-block" />Яндекс</span>}
+                {(byMm?.revenue ?? 0) > 0 && <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-green-500 rounded inline-block" />Мегамаркет</span>}
                 <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-slate-300 rounded inline-block border-dashed" />Итого</span>
               </div>
             </div>
@@ -197,23 +203,22 @@ export default function AnalyticsPage() {
               <h2 className="font-semibold text-slate-800">По площадкам</h2>
               <PlatformBar label="Wildberries" value={byWb?.revenue ?? 0} total={totalRev} color="bg-pink-400" />
               <PlatformBar label="Ozon" value={byOzon?.revenue ?? 0} total={totalRev} color="bg-blue-400" />
+              {(byYm?.revenue ?? 0) > 0 && <PlatformBar label="Яндекс Маркет" value={byYm?.revenue ?? 0} total={totalRev} color="bg-amber-400" />}
+              {(byMm?.revenue ?? 0) > 0 && <PlatformBar label="Мегамаркет" value={byMm?.revenue ?? 0} total={totalRev} color="bg-green-400" />}
               <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p className="text-slate-500 text-xs">WB заказы</p>
-                  <p className="font-semibold text-slate-800">{byWb?.orders ?? 0}</p>
-                </div>
-                <div>
-                  <p className="text-slate-500 text-xs">Ozon заказы</p>
-                  <p className="font-semibold text-slate-800">{byOzon?.orders ?? 0}</p>
-                </div>
-                <div>
-                  <p className="text-slate-500 text-xs">WB возвраты</p>
-                  <p className="font-semibold text-slate-800">{byWb?.returns ?? 0}</p>
-                </div>
-                <div>
-                  <p className="text-slate-500 text-xs">Ozon возвраты</p>
-                  <p className="font-semibold text-slate-800">{byOzon?.returns ?? 0}</p>
-                </div>
+                {[
+                  { label: 'WB заказы', val: byWb?.orders ?? 0 },
+                  { label: 'Ozon заказы', val: byOzon?.orders ?? 0 },
+                  ...(( byYm?.orders ?? 0) > 0 ? [{ label: 'YM заказы', val: byYm!.orders }] : []),
+                  ...(( byMm?.orders ?? 0) > 0 ? [{ label: 'MM заказы', val: byMm!.orders }] : []),
+                  { label: 'WB возвраты', val: byWb?.returns ?? 0 },
+                  { label: 'Ozon возвраты', val: byOzon?.returns ?? 0 },
+                ].map(({ label, val }) => (
+                  <div key={label}>
+                    <p className="text-slate-500 text-xs">{label}</p>
+                    <p className="font-semibold text-slate-800">{val}</p>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -240,7 +245,10 @@ export default function AnalyticsPage() {
                       }`}>{a.stock}</span>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-slate-800 truncate">{a.title || a.sku}</p>
-                        <p className="text-xs text-slate-500">{a.platform === 'wb' ? 'WB' : 'Ozon'} · {a.level === 'critical' ? 'Нет в наличии' : 'Мало'}</p>
+                        <p className="text-xs text-slate-500">
+                          {({ wb: 'WB', ozon: 'Ozon', ym: 'Яндекс Маркет', mm: 'Мегамаркет' } as Record<string, string>)[a.platform] ?? a.platform}
+                          {' '}· {a.level === 'critical' ? 'Нет в наличии' : 'Мало'}
+                        </p>
                       </div>
                     </div>
                   ))}
@@ -274,7 +282,7 @@ export default function AnalyticsPage() {
               <div className="text-5xl mb-4">📊</div>
               <h2 className="text-lg font-semibold text-slate-800 mb-2">Нет данных для анализа</h2>
               <p className="text-slate-500 text-sm mb-6">
-                Подключите магазин WB или Ozon и добавьте ключ статистики чтобы видеть аналитику продаж
+                Подключите магазин WB, Ozon, Яндекс Маркет или Мегамаркет чтобы видеть аналитику продаж
               </p>
               <a href="/connections" className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-600 text-white font-medium rounded-xl hover:bg-purple-700 transition-colors text-sm">
                 Подключить магазин

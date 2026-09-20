@@ -560,6 +560,8 @@ export interface SalesDayChart {
   date: string;
   wb: number;
   ozon: number;
+  ym: number;
+  mm: number;
   total: number;
 }
 
@@ -592,6 +594,8 @@ export interface AnalyticsSummary {
   byPlatform: {
     wb: PlatformMetrics;
     ozon: PlatformMetrics;
+    ym: PlatformMetrics;
+    mm: PlatformMetrics;
   };
   chart: SalesDayChart[];
   stockAlerts: StockAlert[];

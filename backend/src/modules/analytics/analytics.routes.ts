@@ -56,10 +56,12 @@ analyticsRouter.get('/summary', async (req: Request, res: Response) => {
       );
 
       // Merge daily chart data across all connections
-      const chartMap: Record<string, { date: string; wb: number; ozon: number; total: number }> = {};
+      const chartMap: Record<string, { date: string; wb: number; ozon: number; ym: number; mm: number; total: number }> = {};
       const byPlatform: Record<string, { revenue: number; orders: number; returns: number; netPayout: number }> = {
         wb: { revenue: 0, orders: 0, returns: 0, netPayout: 0 },
         ozon: { revenue: 0, orders: 0, returns: 0, netPayout: 0 },
+        ym: { revenue: 0, orders: 0, returns: 0, netPayout: 0 },
+        mm: { revenue: 0, orders: 0, returns: 0, netPayout: 0 },
       };
 
       const productRevMap: Record<string, { sku: string; title: string; platform: string; revenue: number; orders: number }> = {};
@@ -73,8 +75,8 @@ analyticsRouter.get('/summary', async (req: Request, res: Response) => {
         byPlatform[platform].netPayout += finance.netPayout;
 
         for (const d of salesDays) {
-          if (!chartMap[d.date]) chartMap[d.date] = { date: d.date, wb: 0, ozon: 0, total: 0 };
-          chartMap[d.date][platform as 'wb' | 'ozon'] += d.revenue;
+          if (!chartMap[d.date]) chartMap[d.date] = { date: d.date, wb: 0, ozon: 0, ym: 0, mm: 0, total: 0 };
+          chartMap[d.date][platform as 'wb' | 'ozon' | 'ym' | 'mm'] += d.revenue;
           chartMap[d.date].total += d.revenue;
           byPlatform[platform].orders += d.orders;
           byPlatform[platform].returns += d.returns;
@@ -102,10 +104,10 @@ analyticsRouter.get('/summary', async (req: Request, res: Response) => {
       }
 
       const chart = Object.values(chartMap).sort((a, b) => a.date.localeCompare(b.date));
-      const totalRevenue = byPlatform.wb.revenue + byPlatform.ozon.revenue;
-      const totalOrders = byPlatform.wb.orders + byPlatform.ozon.orders;
-      const totalReturns = byPlatform.wb.returns + byPlatform.ozon.returns;
-      const totalNetPayout = byPlatform.wb.netPayout + byPlatform.ozon.netPayout;
+      const totalRevenue = Object.values(byPlatform).reduce((s, p) => s + p.revenue, 0);
+      const totalOrders = Object.values(byPlatform).reduce((s, p) => s + p.orders, 0);
+      const totalReturns = Object.values(byPlatform).reduce((s, p) => s + p.returns, 0);
+      const totalNetPayout = Object.values(byPlatform).reduce((s, p) => s + p.netPayout, 0);
       const returnRate = totalOrders > 0 ? Math.round((totalReturns / (totalOrders + totalReturns)) * 100) : 0;
 
       return {

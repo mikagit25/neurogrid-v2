@@ -31,7 +31,7 @@ interface FinanceRecord {
   gross_profit: number | null;
 }
 
-const PLATFORM_LABELS: Record<string, string> = { wb: 'WildBerries', ozon: 'Ozon' };
+const PLATFORM_LABELS: Record<string, string> = { wb: 'WildBerries', ozon: 'Ozon', ym: 'Яндекс Маркет', mm: 'Мегамаркет' };
 
 function fmt(n: number) { return n.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
 
