@@ -7,6 +7,22 @@ import type { Connection } from '@/lib/api';
 const PLATFORM_LABELS: Record<string, string> = {
   wb: 'WildBerries',
   ozon: 'Ozon',
+  ym: 'Яндекс Маркет',
+  mm: 'Мегамаркет',
+};
+
+const PLATFORM_SHORT: Record<string, string> = {
+  wb: 'WB',
+  ozon: 'OZ',
+  ym: 'YM',
+  mm: 'MM',
+};
+
+const PLATFORM_COLORS: Record<string, string> = {
+  wb: 'bg-[#CB11AB]/10 text-[#CB11AB]',
+  ozon: 'bg-blue-100 text-blue-700',
+  ym: 'bg-yellow-100 text-yellow-700',
+  mm: 'bg-green-100 text-green-700',
 };
 
 const STATUS_CLASSES: Record<string, string> = {
@@ -20,6 +36,8 @@ const STATUS_LABELS: Record<string, string> = {
   inactive: 'Неактивно',
   error: 'Ошибка',
 };
+
+type Platform = 'wb' | 'ozon' | 'ym' | 'mm';
 
 function formatDate(dateStr?: string) {
   if (!dateStr) return '—';
@@ -65,12 +83,22 @@ export default function ConnectionsPage() {
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
 
-  const [platform, setPlatform] = useState<'wb' | 'ozon'>('wb');
+  const [platform, setPlatform] = useState<Platform>('wb');
   const [displayName, setDisplayName] = useState('');
+  // WB
   const [wbApiKey, setWbApiKey] = useState('');
   const [wbStatsKey, setWbStatsKey] = useState('');
+  // Ozon
   const [ozonClientId, setOzonClientId] = useState('');
   const [ozonApiKey, setOzonApiKey] = useState('');
+  // Yandex Market
+  const [ymApiToken, setYmApiToken] = useState('');
+  const [ymCampaignId, setYmCampaignId] = useState('');
+  const [ymBusinessId, setYmBusinessId] = useState('');
+  // Megamarket
+  const [mmToken, setMmToken] = useState('');
+  const [mmMerchantId, setMmMerchantId] = useState('');
+
   const [formError, setFormError] = useState('');
   const [formLoading, setFormLoading] = useState(false);
 
@@ -90,10 +118,10 @@ export default function ConnectionsPage() {
   function resetForm() {
     setPlatform('wb');
     setDisplayName('');
-    setWbApiKey('');
-    setWbStatsKey('');
-    setOzonClientId('');
-    setOzonApiKey('');
+    setWbApiKey(''); setWbStatsKey('');
+    setOzonClientId(''); setOzonApiKey('');
+    setYmApiToken(''); setYmCampaignId(''); setYmBusinessId('');
+    setMmToken(''); setMmMerchantId('');
     setFormError('');
   }
 
@@ -102,12 +130,16 @@ export default function ConnectionsPage() {
     setFormError('');
 
     if (platform === 'wb' && !wbApiKey.trim()) {
-      setFormError('Введите API-ключ WildBerries');
-      return;
+      setFormError('Введите API-ключ WildBerries'); return;
     }
     if (platform === 'ozon' && (!ozonClientId.trim() || !ozonApiKey.trim())) {
-      setFormError('Введите Client ID и API-ключ Ozon');
-      return;
+      setFormError('Введите Client ID и API-ключ Ozon'); return;
+    }
+    if (platform === 'ym' && (!ymApiToken.trim() || !ymCampaignId.trim() || !ymBusinessId.trim())) {
+      setFormError('Введите OAuth-токен, ID кампании и ID бизнеса'); return;
+    }
+    if (platform === 'mm' && (!mmToken.trim() || !mmMerchantId.trim())) {
+      setFormError('Введите API-токен и ID продавца'); return;
     }
 
     setFormLoading(true);
@@ -119,9 +151,16 @@ export default function ConnectionsPage() {
       if (platform === 'wb') {
         data.apiKey = wbApiKey.trim();
         if (wbStatsKey.trim()) data.statisticsApiKey = wbStatsKey.trim();
-      } else {
+      } else if (platform === 'ozon') {
         data.clientId = ozonClientId.trim();
         data.apiKey = ozonApiKey.trim();
+      } else if (platform === 'ym') {
+        data.apiToken = ymApiToken.trim();
+        data.campaignId = ymCampaignId.trim();
+        data.businessId = ymBusinessId.trim();
+      } else if (platform === 'mm') {
+        data.token = mmToken.trim();
+        data.merchantId = mmMerchantId.trim();
       }
       await createConnection(data);
       resetForm();
@@ -134,6 +173,13 @@ export default function ConnectionsPage() {
       setFormLoading(false);
     }
   }
+
+  const placeholders: Record<Platform, string> = {
+    wb: 'Мой магазин WB',
+    ozon: 'Мой магазин Ozon',
+    ym: 'Мой магазин Яндекс',
+    mm: 'Мой магазин Мегамаркет',
+  };
 
   return (
     <div className="space-y-6">
@@ -163,7 +209,7 @@ export default function ConnectionsPage() {
 
             {/* Platform selector */}
             <div className="grid grid-cols-2 gap-3">
-              {(['wb', 'ozon'] as const).map((p) => (
+              {(['wb', 'ozon', 'ym', 'mm'] as Platform[]).map((p) => (
                 <button
                   key={p}
                   type="button"
@@ -188,7 +234,7 @@ export default function ConnectionsPage() {
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder={platform === 'wb' ? 'Мой магазин WB' : 'Мой магазин Ozon'}
+                placeholder={placeholders[platform]}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
@@ -203,9 +249,7 @@ export default function ConnectionsPage() {
                   </HintLink>
                   . Нажмите «Создать новый токен» и выберите права:{' '}
                   <strong>Контент</strong> + <strong>Аналитика</strong> + <strong>Отзывы и вопросы</strong>.
-                  Один токен со всеми тремя правами заменяет оба поля ниже.
                 </InfoBox>
-
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     API-ключ (токен) <span className="text-red-500">*</span>
@@ -218,10 +262,9 @@ export default function ConnectionsPage() {
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-xs"
                   />
                   <p className="mt-1 text-xs text-slate-400">
-                    Должны быть включены права: <strong>Контент</strong>, <strong>Аналитика</strong>, <strong>Отзывы и вопросы</strong>
+                    Права: <strong>Контент</strong>, <strong>Аналитика</strong>, <strong>Отзывы и вопросы</strong>
                   </p>
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Токен статистики{' '}
@@ -252,7 +295,6 @@ export default function ConnectionsPage() {
                   . Нажмите «Создать ключ», тип — <strong>Admin</strong>.
                   Client ID находится там же, в шапке страницы.
                 </InfoBox>
-
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Client ID <span className="text-red-500">*</span>
@@ -264,11 +306,8 @@ export default function ConnectionsPage() {
                     placeholder="123456"
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
-                  <p className="mt-1 text-xs text-slate-400">
-                    Числовой ID — виден в шапке страницы API ключей
-                  </p>
+                  <p className="mt-1 text-xs text-slate-400">Числовой ID — виден в шапке страницы API ключей</p>
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     API-ключ <span className="text-red-500">*</span>
@@ -280,9 +319,95 @@ export default function ConnectionsPage() {
                     placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-xs"
                   />
-                  <p className="mt-1 text-xs text-slate-400">
-                    Тип ключа: <strong>Admin</strong> — нужен для товаров, аналитики и отзывов
-                  </p>
+                  <p className="mt-1 text-xs text-slate-400">Тип ключа: <strong>Admin</strong></p>
+                </div>
+              </>
+            )}
+
+            {/* Yandex Market fields */}
+            {platform === 'ym' && (
+              <>
+                <InfoBox>
+                  Токен создаётся в кабинете Яндекс Маркет:{' '}
+                  <HintLink href="https://partner.market.yandex.ru/settings/api">
+                    Настройки → API
+                  </HintLink>
+                  . ID кампании — в URL личного кабинета (числа после /campaigns/). ID бизнеса — в разделе «Настройки бизнеса».
+                </InfoBox>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    OAuth-токен <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={ymApiToken}
+                    onChange={(e) => setYmApiToken(e.target.value)}
+                    placeholder="y0_AgAAAA…"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-xs"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      ID кампании <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={ymCampaignId}
+                      onChange={(e) => setYmCampaignId(e.target.value)}
+                      placeholder="12345678"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      ID бизнеса <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={ymBusinessId}
+                      onChange={(e) => setYmBusinessId(e.target.value)}
+                      placeholder="87654321"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Megamarket fields */}
+            {platform === 'mm' && (
+              <>
+                <InfoBox>
+                  Токен создаётся в личном кабинете Мегамаркет:{' '}
+                  <HintLink href="https://partner.megamarket.ru/settings/api">
+                    Профиль → API-доступ
+                  </HintLink>
+                  . ID продавца (Merchant ID) виден в шапке кабинета.
+                </InfoBox>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    API-токен <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={mmToken}
+                    onChange={(e) => setMmToken(e.target.value)}
+                    placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    ID продавца (Merchant ID) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={mmMerchantId}
+                    onChange={(e) => setMmMerchantId(e.target.value)}
+                    placeholder="123456"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
                 </div>
               </>
             )}
@@ -293,7 +418,6 @@ export default function ConnectionsPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
               Ключи хранятся в зашифрованном виде (AES-256) и не передаются третьим лицам.
-              NeuroGrid работает только на чтение — цены и карточки изменяются только по вашей команде.
             </div>
 
             <div className="flex gap-3 pt-1">
@@ -340,14 +464,14 @@ export default function ConnectionsPage() {
               <div key={c.id} className="px-5 py-4 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold ${
-                    c.platform === 'wb' ? 'bg-[#CB11AB]/10 text-[#CB11AB]' : 'bg-blue-100 text-blue-700'
+                    PLATFORM_COLORS[c.platform] || 'bg-slate-100 text-slate-600'
                   }`}>
-                    {c.platform === 'wb' ? 'WB' : 'OZ'}
+                    {PLATFORM_SHORT[c.platform] || c.platform.toUpperCase()}
                   </div>
                   <div>
                     <p className="font-medium text-slate-800">{c.display_name}</p>
                     <p className="text-xs text-slate-500">
-                      {PLATFORM_LABELS[c.platform]} · Проверено: {formatDate(c.last_verified_at)}
+                      {PLATFORM_LABELS[c.platform] || c.platform} · Проверено: {formatDate(c.last_verified_at)}
                     </p>
                   </div>
                 </div>

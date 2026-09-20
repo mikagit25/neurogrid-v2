@@ -25,7 +25,7 @@ export interface OrderLine {
 
 export interface MarketplaceOrder {
   id: string;
-  platform: 'wb' | 'ozon';
+  platform: 'wb' | 'ozon' | 'ym' | 'mm';
   status: string;
   createdAt: string;
   items: OrderLine[];
@@ -88,7 +88,7 @@ export interface FinanceRecord {
 }
 
 export interface MarketplaceAdapter {
-  readonly platform: 'ozon' | 'wb';
+  readonly platform: 'wb' | 'ozon' | 'ym' | 'mm';
 
   /** Verify credentials are valid — throw if not */
   validateCredentials(): Promise<void>;

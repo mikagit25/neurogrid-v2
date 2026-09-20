@@ -21,7 +21,22 @@ const ozonSchema = z.object({
   displayName: z.string().optional(),
 });
 
-const connectionSchema = z.discriminatedUnion('platform', [wbSchema, ozonSchema]);
+const ymSchema = z.object({
+  platform: z.literal('ym'),
+  apiToken: z.string().min(1),
+  campaignId: z.string().min(1),
+  businessId: z.string().min(1),
+  displayName: z.string().optional(),
+});
+
+const mmSchema = z.object({
+  platform: z.literal('mm'),
+  token: z.string().min(1),
+  merchantId: z.string().min(1),
+  displayName: z.string().optional(),
+});
+
+const connectionSchema = z.discriminatedUnion('platform', [wbSchema, ozonSchema, ymSchema, mmSchema]);
 
 connectionsRouter.post('/', async (req: Request, res: Response) => {
   const parsed = connectionSchema.safeParse(req.body);

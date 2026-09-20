@@ -249,7 +249,7 @@ export default function ScenarioForm({ slug, connections, onSubmit, loading, pri
               <option value="">— Выберите подключение —</option>
               {connections.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.display_name} ({c.platform === 'wb' ? 'WildBerries' : 'Ozon'})
+                  {c.display_name} ({({ wb: 'WildBerries', ozon: 'Ozon', ym: 'Яндекс Маркет', mm: 'Мегамаркет' } as Record<string,string>)[c.platform] ?? c.platform})
                 </option>
               ))}
             </select>
@@ -301,6 +301,8 @@ export default function ScenarioForm({ slug, connections, onSubmit, loading, pri
             >
               <option value="wb">WildBerries</option>
               <option value="ozon">Ozon</option>
+              <option value="ym">Яндекс Маркет</option>
+              <option value="mm">Мегамаркет</option>
             </select>
           </div>
         </>
@@ -761,6 +763,8 @@ export default function ScenarioForm({ slug, connections, onSubmit, loading, pri
               >
                 <option value="wb">Wildberries</option>
                 <option value="ozon">Ozon</option>
+                <option value="ym">Яндекс Маркет</option>
+                <option value="mm">Мегамаркет</option>
               </select>
             </div>
             <div>
