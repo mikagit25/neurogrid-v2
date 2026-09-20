@@ -24,6 +24,18 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<Respon
   return res;
 }
 
+/** apiFetch that auto-parses JSON and throws on non-ok responses */
+export async function apiRequest(path: string, options: RequestInit = {}): Promise<any> {
+  const res = await apiFetch(path, options);
+  if (!res.ok) {
+    const err: any = new Error(`HTTP ${res.status}`);
+    err.status = res.status;
+    try { const j = await res.json(); err.message = j.error || err.message; } catch {}
+    throw err;
+  }
+  return res.json();
+}
+
 // ---- Types ----
 
 export interface User {

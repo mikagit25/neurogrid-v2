@@ -17,9 +17,13 @@ import { uploadsRouter } from './modules/uploads/uploads.routes';
 import { autopilotRouter } from './modules/autopilot/autopilot.routes';
 import { analyticsRouter } from './modules/analytics/analytics.routes';
 import { ordersRouter } from './modules/orders/orders.routes';
+import { warehouseRouter } from './modules/warehouse/warehouse.routes';
+import { financeRouter } from './modules/finance/finance.routes';
+import { subscriptionsRouter } from './modules/subscriptions/subscriptions.routes';
 import { startWorker } from './queue/queue';
 import { processScenarioJob } from './queue/workers/scenario.worker';
 import { startAutomationWorker } from './queue/workers/automation.worker';
+import { startSyncWorker } from './queue/workers/sync.worker';
 
 const app = express();
 
@@ -51,6 +55,9 @@ app.use('/api/uploads', uploadsRouter);
 app.use('/api/autopilot', autopilotRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/orders', ordersRouter);
+app.use('/api/warehouse', warehouseRouter);
+app.use('/api/finance', financeRouter);
+app.use('/api/subscriptions', subscriptionsRouter);
 
 // Serve generated images (infographics, AI photos)
 app.use('/images', express.static(path.join(__dirname, '../public/images')));
@@ -60,6 +67,7 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOS
 // Start BullMQ workers
 startWorker(processScenarioJob);
 startAutomationWorker();
+startSyncWorker();
 
 app.listen(config.port, () => {
   console.log(`NeuroGrid backend :${config.port} [${config.nodeEnv}]`);

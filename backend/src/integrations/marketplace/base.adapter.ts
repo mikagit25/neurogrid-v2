@@ -68,6 +68,25 @@ export interface ReviewOrQuestion {
   createdAt: string;
 }
 
+export interface WarehouseStock {
+  sku: string;
+  title: string;
+  warehouseType: 'fbo' | 'fbs';
+  warehouseName: string;
+  quantity: number;
+}
+
+export interface FinanceRecord {
+  sku: string;
+  title: string;
+  quantity: number;
+  revenue: number;
+  commission: number;
+  logistics: number;
+  penalty: number;
+  netPayout: number;
+}
+
 export interface MarketplaceAdapter {
   readonly platform: 'ozon' | 'wb';
 
@@ -85,9 +104,14 @@ export interface MarketplaceAdapter {
   postReviewResponse(reviewId: string, text: string): Promise<void>;
   getStockLevels(): Promise<{ sku: string; stock: number }[]>;
 
+  /** FBO + FBS breakdown per warehouse */
+  getWarehouseStocks(): Promise<WarehouseStock[]>;
+
   // Analytics & Finance
   getSalesByDay(dateFrom: string, dateTo: string): Promise<SalesDay[]>;
   getFinanceSummary(dateFrom: string, dateTo: string): Promise<FinanceSummary>;
+  /** Per-SKU finance detail for a period */
+  getFinanceRecords(dateFrom: string, dateTo: string): Promise<FinanceRecord[]>;
 
   // Orders (FBS/FBO)
   getNewOrders(): Promise<MarketplaceOrder[]>;

@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { MarketplaceAdapter, ProductInfo, CompetitorPrice, ReviewOrQuestion, SalesDay, FinanceSummary, MarketplaceOrder } from '../base.adapter';
+import { MarketplaceAdapter, ProductInfo, CompetitorPrice, ReviewOrQuestion, SalesDay, FinanceSummary, FinanceRecord, WarehouseStock, MarketplaceOrder } from '../base.adapter';
 
 export interface WbCredentials {
   apiKey: string;
@@ -148,11 +148,64 @@ export class WbAdapter implements MarketplaceAdapter {
   }
 
   async getStockLevels(): Promise<{ sku: string; stock: number }[]> {
-    const resp = await this.contentClient.get('/api/v3/stocks', {
-      params: { dateFrom: new Date(Date.now() - 86400_000).toISOString() },
+    const resp = await this.statisticsClient.get('/api/v1/supplier/stocks', {
+      params: { dateFrom: new Date(Date.now() - 86400_000).toISOString().slice(0, 10) },
     });
-    const stocks: any[] = resp.data.stocks ?? [];
-    return stocks.map((s: any) => ({ sku: String(s.nmId), stock: s.quantity ?? 0 }));
+    const stocks: any[] = resp.data ?? [];
+    const totals: Record<string, number> = {};
+    for (const s of stocks) {
+      const sku = String(s.nmId);
+      totals[sku] = (totals[sku] ?? 0) + (s.quantity ?? 0);
+    }
+    return Object.entries(totals).map(([sku, stock]) => ({ sku, stock }));
+  }
+
+  async getWarehouseStocks(): Promise<WarehouseStock[]> {
+    const results: WarehouseStock[] = [];
+    try {
+      // FBO — товары на складах WB
+      const fboResp = await this.statisticsClient.get('/api/v1/supplier/stocks', {
+        params: { dateFrom: new Date(Date.now() - 86400_000).toISOString().slice(0, 10) },
+      });
+      const fboStocks: any[] = fboResp.data ?? [];
+      for (const s of fboStocks) {
+        if ((s.quantity ?? 0) <= 0) continue;
+        results.push({
+          sku: String(s.nmId),
+          title: s.subject ?? '',
+          warehouseType: 'fbo',
+          warehouseName: s.warehouseName ?? 'WB FBO',
+          quantity: s.quantity ?? 0,
+        });
+      }
+    } catch { /* WB statistics key may be absent */ }
+
+    try {
+      // FBS — товары на складах продавца (через marketplace API)
+      const whResp = await this.marketplaceClient.get('/api/v3/warehouses');
+      const warehouses: any[] = whResp.data ?? [];
+      for (const wh of warehouses) {
+        try {
+          const skusResp = await this.marketplaceClient.post(
+            `/api/v3/stocks/${wh.id}`,
+            { skus: [] }, // empty = all
+          );
+          const skuStocks: any[] = skusResp.data?.stocks ?? [];
+          for (const s of skuStocks) {
+            if ((s.amount ?? 0) <= 0) continue;
+            results.push({
+              sku: s.sku ?? '',
+              title: '',
+              warehouseType: 'fbs',
+              warehouseName: wh.name ?? 'FBS',
+              quantity: s.amount ?? 0,
+            });
+          }
+        } catch { /* skip individual warehouse errors */ }
+      }
+    } catch { /* FBS not configured */ }
+
+    return results;
   }
 
   // ---- Analytics ----
@@ -214,6 +267,44 @@ export class WbAdapter implements MarketplaceAdapter {
       return { revenue, commissions, logistics, penalties, netPayout };
     } catch {
       return { revenue: 0, commissions: 0, logistics: 0, penalties: 0, netPayout: 0 };
+    }
+  }
+
+  async getFinanceRecords(dateFrom: string, dateTo: string): Promise<FinanceRecord[]> {
+    try {
+      const resp = await this.statisticsClient.get('/api/v5/supplier/reportDetailByPeriod', {
+        params: { dateFrom, dateTo, limit: 100000, rrdid: 0 },
+      });
+      const rows: any[] = resp.data ?? [];
+      const bySkuTitle: Record<string, FinanceRecord> = {};
+
+      for (const row of rows) {
+        const sku = String(row.nmId ?? '');
+        const title = row.subject ?? '';
+        const key = sku;
+        if (!bySkuTitle[key]) {
+          bySkuTitle[key] = { sku, title, quantity: 0, revenue: 0, commission: 0, logistics: 0, penalty: 0, netPayout: 0 };
+        }
+        const r = bySkuTitle[key];
+        const type: string = row.supplier_oper_name ?? '';
+        if (type === 'Продажа') {
+          r.revenue += row.retail_price_withdisc_rub ?? 0;
+          r.commission += Math.abs(row.ppvz_sales_commission ?? 0);
+          r.netPayout += row.ppvz_for_pay ?? 0;
+          r.quantity += row.quantity ?? 1;
+        } else if (type === 'Логистика') {
+          r.logistics += Math.abs(row.delivery_rub ?? 0);
+          r.netPayout -= Math.abs(row.ppvz_for_pay ?? 0);
+        } else if (type === 'Возврат') {
+          r.netPayout -= Math.abs(row.ppvz_for_pay ?? 0);
+        } else if (type === 'Штраф' || type.includes('штраф')) {
+          r.penalty += Math.abs(row.ppvz_for_pay ?? 0);
+          r.netPayout -= Math.abs(row.ppvz_for_pay ?? 0);
+        }
+      }
+      return Object.values(bySkuTitle).filter(r => r.revenue > 0 || r.quantity > 0);
+    } catch {
+      return [];
     }
   }
 

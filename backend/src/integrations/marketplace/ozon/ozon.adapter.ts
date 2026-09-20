@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { MarketplaceAdapter, ProductInfo, CompetitorPrice, ReviewOrQuestion, SalesDay, FinanceSummary, MarketplaceOrder } from '../base.adapter';
+import { MarketplaceAdapter, ProductInfo, CompetitorPrice, ReviewOrQuestion, SalesDay, FinanceSummary, FinanceRecord, WarehouseStock, MarketplaceOrder } from '../base.adapter';
 
 export interface OzonCredentials {
   clientId: string;
@@ -164,8 +164,58 @@ export class OzonAdapter implements MarketplaceAdapter {
     });
     return (resp.data.result?.items ?? []).map((i: any) => ({
       sku: String(i.product_id),
-      stock: i.stocks?.find((s: any) => s.type === 'fbo')?.present ?? 0,
+      stock: (i.stocks ?? []).reduce((sum: number, s: any) => sum + (s.present ?? 0), 0),
     }));
+  }
+
+  async getWarehouseStocks(): Promise<WarehouseStock[]> {
+    try {
+      const results: WarehouseStock[] = [];
+      let lastId = '';
+      // Paginate through all products
+      while (true) {
+        const resp = await this.client.post('/v3/product/info/stocks', {
+          filter: { visibility: 'ALL' },
+          last_id: lastId,
+          limit: 1000,
+        });
+        const items: any[] = resp.data.result?.items ?? [];
+        for (const item of items) {
+          const sku = String(item.product_id);
+          for (const s of item.stocks ?? []) {
+            if ((s.present ?? 0) <= 0) continue;
+            results.push({
+              sku,
+              title: '',
+              warehouseType: s.type === 'fbs' ? 'fbs' : 'fbo',
+              warehouseName: s.type === 'fbs' ? 'Ozon FBS (мой склад)' : 'Ozon FBO',
+              quantity: s.present ?? 0,
+            });
+          }
+        }
+        lastId = resp.data.result?.last_id ?? '';
+        if (!lastId || items.length < 1000) break;
+      }
+      // Enrich titles from product list (best effort)
+      try {
+        const skus = [...new Set(results.map(r => r.sku))].slice(0, 100);
+        if (skus.length > 0) {
+          const infoResp = await this.client.post('/v2/product/info/list', {
+            product_id: skus.map(Number).filter(Boolean),
+          });
+          const infoMap: Record<string, string> = {};
+          for (const item of infoResp.data?.result?.items ?? []) {
+            infoMap[String(item.id)] = item.name ?? '';
+          }
+          for (const r of results) {
+            if (infoMap[r.sku]) r.title = infoMap[r.sku];
+          }
+        }
+      } catch { /* title enrichment is best-effort */ }
+      return results;
+    } catch {
+      return [];
+    }
   }
 
   // ---- Analytics ----
@@ -224,6 +274,51 @@ export class OzonAdapter implements MarketplaceAdapter {
       return { revenue, commissions, logistics, penalties, netPayout };
     } catch {
       return { revenue: 0, commissions: 0, logistics: 0, penalties: 0, netPayout: 0 };
+    }
+  }
+
+  async getFinanceRecords(dateFrom: string, dateTo: string): Promise<FinanceRecord[]> {
+    try {
+      const resp = await this.client.post('/v1/finance/transaction/list', {
+        filter: {
+          date: { from: `${dateFrom}T00:00:00.000Z`, to: `${dateTo}T23:59:59.999Z` },
+          operation_type: [],
+          posting_number: '',
+          transaction_type: 'all',
+        },
+        page: 1,
+        page_size: 1000,
+      });
+      const ops: any[] = resp.data?.result?.operations ?? [];
+      const bySku: Record<string, FinanceRecord> = {};
+      for (const op of ops) {
+        const amount = Number(op.amount ?? 0);
+        const type: string = op.operation_type ?? '';
+        const items: any[] = op.items ?? [{ sku: 'unknown', name: '' }];
+        for (const item of items) {
+          const sku = String(item.sku ?? 'unknown');
+          const title = item.name ?? '';
+          if (!bySku[sku]) bySku[sku] = { sku, title, quantity: 0, revenue: 0, commission: 0, logistics: 0, penalty: 0, netPayout: 0 };
+          const r = bySku[sku];
+          if (type === 'OperationAgentDeliveredToCustomer') {
+            r.revenue += amount;
+            r.quantity += 1;
+            r.netPayout += amount;
+          } else if (type.includes('MarketplaceServiceItemFulfillment') || type.includes('Commission')) {
+            r.commission += Math.abs(amount);
+            r.netPayout += amount;
+          } else if (type.includes('Delivery') || type.includes('Logistic')) {
+            r.logistics += Math.abs(amount);
+            r.netPayout += amount;
+          } else if (type.includes('Penalty') || (amount < 0)) {
+            r.penalty += Math.abs(amount);
+            r.netPayout += amount;
+          }
+        }
+      }
+      return Object.values(bySku).filter(r => r.revenue > 0 || r.quantity > 0);
+    } catch {
+      return [];
     }
   }
 
