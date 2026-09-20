@@ -3,6 +3,7 @@ import { syncWarehouseStocks } from '../../modules/warehouse/warehouse.service';
 import { syncFinanceRecords } from '../../modules/finance/finance.service';
 import { sendDailyDigest } from '../../utils/mailer';
 import { config } from '../../config';
+import { runPricingWorker } from './pricing.worker';
 
 const LOW_STOCK_THRESHOLD = 10;
 
@@ -176,6 +177,8 @@ export function startSyncWorker() {
   setInterval(() => { runStockSync().catch(console.error); }, 60 * 60 * 1000);
   // Finance: every 6 hours
   setInterval(() => { runFinanceSync().catch(console.error); }, 6 * 60 * 60 * 1000);
+  // Pricing rules: every 6 hours
+  setInterval(() => { runPricingWorker().catch(console.error); }, 6 * 60 * 60 * 1000);
   // Digest: daily at 08:00
   setTimeout(() => {
     runDailyDigest().catch(console.error);

@@ -9,6 +9,8 @@ import {
   upsertPricingRule,
   deletePricingRule,
 } from './autopilot.service';
+import { applyPricingRule } from '../../queue/workers/pricing.worker';
+import { db } from '../../db';
 
 export const autopilotRouter = Router();
 autopilotRouter.use(authenticate);
@@ -149,6 +151,57 @@ autopilotRouter.delete('/pricing-rules/:id', async (req: Request, res: Response)
     const userId = (req as any).user.userId;
     await deletePricingRule(userId, req.params.id);
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// POST /api/autopilot/pricing-rules/:id/apply — manual trigger
+autopilotRouter.post('/pricing-rules/:id/apply', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId;
+    const result = await applyPricingRule(req.params.id, userId);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /api/autopilot/pricing-rules/:id/history?limit=50
+autopilotRouter.get('/pricing-rules/:id/history', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId;
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const { rows } = await db.query(
+      `SELECT pcl.id, pcl.platform, pcl.sku, pcl.title, pcl.old_price, pcl.new_price, pcl.reason, pcl.applied_at
+       FROM price_change_log pcl
+       WHERE pcl.rule_id = $1 AND pcl.user_id = $2
+       ORDER BY pcl.applied_at DESC
+       LIMIT $3`,
+      [req.params.id, userId, limit],
+    );
+    res.json({ history: rows });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /api/autopilot/pricing-rules/history — all changes for user
+autopilotRouter.get('/pricing-rules/history', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId;
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const { rows } = await db.query(
+      `SELECT pcl.id, pcl.rule_id, pr.name AS rule_name, pcl.platform, pcl.sku,
+              pcl.title, pcl.old_price, pcl.new_price, pcl.reason, pcl.applied_at
+       FROM price_change_log pcl
+       LEFT JOIN pricing_rules pr ON pr.id = pcl.rule_id
+       WHERE pcl.user_id = $1
+       ORDER BY pcl.applied_at DESC
+       LIMIT $2`,
+      [userId, limit],
+    );
+    res.json({ history: rows });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

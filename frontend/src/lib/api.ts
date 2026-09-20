@@ -521,6 +521,34 @@ export async function deletePricingRule(id: string): Promise<void> {
   await apiFetch(`/api/autopilot/pricing-rules/${id}`, { method: 'DELETE' });
 }
 
+export async function applyPricingRuleNow(id: string): Promise<{ applied: number; skipped: number }> {
+  const res = await apiFetch(`/api/autopilot/pricing-rules/${id}/apply`, { method: 'POST' });
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'Ошибка применения'); }
+  return res.json();
+}
+
+export interface PriceChangeLog {
+  id: string;
+  rule_id?: string;
+  rule_name?: string;
+  platform: string;
+  sku: string;
+  title?: string;
+  old_price: number;
+  new_price: number;
+  reason?: string;
+  applied_at: string;
+}
+
+export async function getPricingHistory(ruleId?: string): Promise<PriceChangeLog[]> {
+  const url = ruleId
+    ? `/api/autopilot/pricing-rules/${ruleId}/history`
+    : '/api/autopilot/pricing-rules/history';
+  const res = await apiFetch(url);
+  if (!res.ok) throw new Error('Ошибка загрузки истории');
+  return (await res.json()).history;
+}
+
 // ---- Admin ----
 
 export async function adminGetUsers(): Promise<AdminUser[]> {
