@@ -97,20 +97,34 @@ export async function sendDailyDigest(to: string, d: DigestData) {
 
   <!-- KPIs -->
   <div style="padding:24px 32px 0">
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px">
-      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;text-align:center">
-        <div style="font-size:11px;color:#64748b;margin-bottom:4px">Выручка 7д</div>
-        <div style="font-size:18px;font-weight:800;color:#1e293b">${fmt(d.revenue7d)} ₽</div>
-      </div>
-      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;text-align:center">
-        <div style="font-size:11px;color:#16a34a;margin-bottom:4px">Выплата 7д</div>
-        <div style="font-size:18px;font-weight:800;color:#15803d">${fmt(d.netPayout7d)} ₽</div>
-      </div>
-      <div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:10px;padding:14px;text-align:center">
-        <div style="font-size:11px;color:#7c3aed;margin-bottom:4px">Продано шт.</div>
-        <div style="font-size:18px;font-weight:800;color:#6d28d9">${d.qty7d}</div>
-      </div>
-    </div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:24px">
+      <tr>
+        <td width="33%" style="padding-right:6px">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px">
+            <tr><td style="padding:14px;text-align:center">
+              <div style="font-size:11px;color:#64748b;margin-bottom:4px">Выручка 7д</div>
+              <div style="font-size:18px;font-weight:800;color:#1e293b">${fmt(d.revenue7d)} ₽</div>
+            </td></tr>
+          </table>
+        </td>
+        <td width="33%" style="padding-left:3px;padding-right:3px">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px">
+            <tr><td style="padding:14px;text-align:center">
+              <div style="font-size:11px;color:#16a34a;margin-bottom:4px">Выплата 7д</div>
+              <div style="font-size:18px;font-weight:800;color:#15803d">${fmt(d.netPayout7d)} ₽</div>
+            </td></tr>
+          </table>
+        </td>
+        <td width="33%" style="padding-left:6px">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:10px">
+            <tr><td style="padding:14px;text-align:center">
+              <div style="font-size:11px;color:#7c3aed;margin-bottom:4px">Продано шт.</div>
+              <div style="font-size:18px;font-weight:800;color:#6d28d9">${d.qty7d}</div>
+            </td></tr>
+          </table>
+        </td>
+      </tr>
+    </table>
   </div>
 
   <!-- By platform -->

@@ -165,11 +165,15 @@ export async function runDailyDigest(): Promise<void> {
 }
 
 function msUntilNext8AM(): number {
+  // Target 08:00 Moscow time (UTC+3 = 05:00 UTC)
   const now = new Date();
-  const next = new Date(now);
-  next.setHours(8, 0, 0, 0);
-  if (next <= now) next.setDate(next.getDate() + 1);
-  return next.getTime() - now.getTime();
+  const nowUtc = now.getTime();
+  const moscowOffsetMs = 3 * 60 * 60 * 1000;
+  const nowMoscow = new Date(nowUtc + moscowOffsetMs);
+  const nextMoscow = new Date(nowMoscow);
+  nextMoscow.setUTCHours(8, 0, 0, 0);
+  if (nextMoscow <= nowMoscow) nextMoscow.setUTCDate(nextMoscow.getUTCDate() + 1);
+  return nextMoscow.getTime() - nowMoscow.getTime();
 }
 
 export function startSyncWorker() {

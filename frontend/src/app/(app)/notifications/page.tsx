@@ -32,7 +32,6 @@ interface ReviewMeta {
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
-  const [publishing, setPublishing] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [digestEnabled, setDigestEnabled] = useState(true);
   const [digestSaving, setDigestSaving] = useState(false);

@@ -167,26 +167,7 @@ autopilotRouter.post('/pricing-rules/:id/apply', async (req: Request, res: Respo
   }
 });
 
-// GET /api/autopilot/pricing-rules/:id/history?limit=50
-autopilotRouter.get('/pricing-rules/:id/history', async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user.userId;
-    const limit = Math.min(Number(req.query.limit) || 50, 200);
-    const { rows } = await db.query(
-      `SELECT pcl.id, pcl.platform, pcl.sku, pcl.title, pcl.old_price, pcl.new_price, pcl.reason, pcl.applied_at
-       FROM price_change_log pcl
-       WHERE pcl.rule_id = $1 AND pcl.user_id = $2
-       ORDER BY pcl.applied_at DESC
-       LIMIT $3`,
-      [req.params.id, userId, limit],
-    );
-    res.json({ history: rows });
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
-
-// GET /api/autopilot/pricing-rules/history — all changes for user
+// GET /api/autopilot/pricing-rules/history — all changes for user (must be BEFORE /:id/history)
 autopilotRouter.get('/pricing-rules/history', async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.userId;
@@ -200,6 +181,25 @@ autopilotRouter.get('/pricing-rules/history', async (req: Request, res: Response
        ORDER BY pcl.applied_at DESC
        LIMIT $2`,
       [userId, limit],
+    );
+    res.json({ history: rows });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /api/autopilot/pricing-rules/:id/history?limit=50
+autopilotRouter.get('/pricing-rules/:id/history', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId;
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const { rows } = await db.query(
+      `SELECT pcl.id, pcl.platform, pcl.sku, pcl.title, pcl.old_price, pcl.new_price, pcl.reason, pcl.applied_at
+       FROM price_change_log pcl
+       WHERE pcl.rule_id = $1 AND pcl.user_id = $2
+       ORDER BY pcl.applied_at DESC
+       LIMIT $3`,
+      [req.params.id, userId, limit],
     );
     res.json({ history: rows });
   } catch (err) {
