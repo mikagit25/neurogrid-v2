@@ -374,14 +374,14 @@ export default function Sidebar({ user }: SidebarProps) {
     <aside className="hidden md:flex flex-col w-64 min-h-screen bg-[#0f172a] text-slate-300">
       {/* Logo */}
       <div className="px-6 py-5 border-b border-slate-700/50">
-        <div className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
           <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center">
             <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
               <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v1h8v-1zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-1a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v1h-3zM4.75 14.094A5.973 5.973 0 004 17v1H1v-1a3 3 0 013.75-2.906z" />
             </svg>
           </div>
           <span className="text-white font-bold text-lg tracking-tight">NeuroGrid</span>
-        </div>
+        </Link>
       </div>
 
       {/* Navigation */}
