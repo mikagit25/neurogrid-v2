@@ -135,6 +135,8 @@ export async function runPricingWorker(): Promise<void> {
             mc.platform, mc.credentials_enc
      FROM pricing_rules pr
      JOIN marketplace_connections mc ON mc.id = pr.connection_id AND mc.status = 'active'
+                                     AND mc.credentials_enc != 'demo_placeholder'
+     JOIN users u ON u.id = pr.user_id AND u.is_demo = false
      WHERE pr.enabled = true`,
   );
 

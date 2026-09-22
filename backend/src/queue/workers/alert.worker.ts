@@ -6,7 +6,12 @@ import { config } from '../../config';
 
 async function getAllUsersWithConnections(): Promise<string[]> {
   const { rows } = await db.query(
-    `SELECT DISTINCT user_id FROM marketplace_connections WHERE status = 'active'`,
+    `SELECT DISTINCT mc.user_id
+     FROM marketplace_connections mc
+     JOIN users u ON u.id = mc.user_id
+     WHERE mc.status = 'active'
+       AND u.is_demo = false
+       AND mc.credentials_enc != 'demo_placeholder'`,
   );
   return rows.map((r: any) => r.user_id);
 }
