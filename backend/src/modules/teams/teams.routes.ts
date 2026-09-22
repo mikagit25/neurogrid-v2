@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { authenticate } from '../auth/auth.middleware';
 import {
   inviteTeamMember, acceptInvitation, listTeamMembers, listPendingInvitations,
@@ -19,14 +20,16 @@ teamsRouter.get('/members', async (req: Request, res: Response) => {
   }
 });
 
+const inviteSchema = z.object({
+  email: z.string().email(),
+  role: z.enum(['analyst', 'manager', 'admin']).default('analyst'),
+});
+
 // POST /api/teams/invite
 teamsRouter.post('/invite', async (req: Request, res: Response) => {
-  const { email, role } = req.body;
-  if (!email || typeof email !== 'string') {
-    res.status(400).json({ error: 'email required' }); return;
-  }
-  const validRoles = ['analyst', 'manager', 'admin'];
-  const memberRole = validRoles.includes(role) ? role : 'analyst';
+  const parsed = inviteSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+  const { email, role: memberRole } = parsed.data;
   try {
     const token = await inviteTeamMember(req.user!.userId, email, memberRole as any);
     res.json({ ok: true, token });
@@ -55,10 +58,13 @@ teamsRouter.delete('/invitations/:id', async (req: Request, res: Response) => {
   }
 });
 
+const acceptSchema = z.object({ token: z.string().min(1) });
+
 // POST /api/teams/accept — called by the invitee after logging in
 teamsRouter.post('/accept', async (req: Request, res: Response) => {
-  const { token } = req.body;
-  if (!token) { res.status(400).json({ error: 'token required' }); return; }
+  const parsed = acceptSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: 'token required' }); return; }
+  const { token } = parsed.data;
   try {
     await acceptInvitation(token, req.user!.userId);
     res.json({ ok: true });

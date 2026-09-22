@@ -128,24 +128,24 @@ export class WbAdapter implements MarketplaceAdapter {
   }
 
   async updatePrice(sku: string, price: number): Promise<void> {
-    await this.contentClient.post('/api/v2/upload/task', {
+    await withRetry(() => this.contentClient.post('/api/v2/upload/task', {
       data: [{ nmID: parseInt(sku, 10), price }],
-    });
+    }));
   }
 
   async updateProductContent(sku: string, title: string, description: string): Promise<void> {
-    await this.contentClient.post('/api/v1/cards/update', [{
+    await withRetry(() => this.contentClient.post('/api/v1/cards/update', [{
       nmID: parseInt(sku, 10),
       title,
       description,
-    }]);
+    }]));
   }
 
   async postReviewResponse(reviewId: string, text: string): Promise<void> {
-    await this.contentClient.patch('/api/v1/feedbacks', {
+    await withRetry(() => this.contentClient.patch('/api/v1/feedbacks', {
       id: reviewId,
       text,
-    });
+    }));
   }
 
   async getStockLevels(): Promise<{ sku: string; stock: number }[]> {
@@ -379,11 +379,11 @@ export class WbAdapter implements MarketplaceAdapter {
   // WB adv API: POST /adv/v1/pause  body { advertId }  → pause campaign
   //             POST /adv/v1/start  body { advertId }  → resume campaign
   async pauseCampaign(externalId: string): Promise<void> {
-    await this.analyticsClient.post('/adv/v1/pause', { advertId: Number(externalId) });
+    await withRetry(() => this.analyticsClient.post('/adv/v1/pause', { advertId: Number(externalId) }));
   }
 
   async resumeCampaign(externalId: string): Promise<void> {
-    await this.analyticsClient.post('/adv/v1/start', { advertId: Number(externalId) });
+    await withRetry(() => this.analyticsClient.post('/adv/v1/start', { advertId: Number(externalId) }));
   }
 
   async getOrderStickers(orderIds: string[]): Promise<{ orderId: string; barcodeBase64: string }[]> {

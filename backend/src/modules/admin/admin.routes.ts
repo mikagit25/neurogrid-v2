@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { authenticate, requireAdmin } from '../auth/auth.middleware';
 import { db } from '../../db';
 
@@ -64,14 +65,16 @@ adminRouter.post('/runs/:id/retry', async (req: Request, res: Response) => {
   res.json({ ok: true, runId: run.id });
 });
 
+const balanceAdjustSchema = z.object({
+  amount: z.number().refine(n => n !== 0, 'amount must be non-zero'),
+  note: z.string().max(200).optional().default('manual adjustment'),
+});
+
 // Manual balance adjustment (credit or debit)
 adminRouter.post('/users/:id/balance', async (req: Request, res: Response) => {
-  const amount = Number(req.body.amount);
-  const note = String(req.body.note ?? 'manual adjustment');
-  if (!amount || isNaN(amount)) {
-    res.status(400).json({ error: 'amount must be a non-zero number' });
-    return;
-  }
+  const parsed = balanceAdjustSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+  const { amount, note } = parsed.data;
 
   const client = await db.connect();
   try {

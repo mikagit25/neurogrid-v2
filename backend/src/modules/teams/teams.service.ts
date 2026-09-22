@@ -97,7 +97,7 @@ export async function acceptInvitation(token: string, acceptingUserId: string): 
 export async function listTeamMembers(ownerId: string) {
   const { rows } = await db.query(
     `SELECT tm.id, tm.role, tm.created_at,
-            u.id AS user_id, u.email, u.name
+            u.id AS user_id, u.email
      FROM team_members tm
      JOIN users u ON u.id = tm.member_user_id
      WHERE tm.owner_id = $1

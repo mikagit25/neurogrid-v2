@@ -137,24 +137,24 @@ export class OzonAdapter implements MarketplaceAdapter {
   }
 
   async updatePrice(sku: string, price: number): Promise<void> {
-    await this.client.post('/v1/product/import/prices', {
+    await withRetry(() => this.client.post('/v1/product/import/prices', {
       prices: [{ product_id: parseInt(sku, 10), price: String(price) }],
-    });
+    }));
   }
 
   async updateProductContent(sku: string, title: string, description: string): Promise<void> {
-    await this.client.post('/v2/product/update', {
+    await withRetry(() => this.client.post('/v2/product/update', {
       item_id: parseInt(sku, 10),
       name: title,
       description,
-    });
+    }));
   }
 
   async postReviewResponse(reviewId: string, text: string): Promise<void> {
-    await this.client.post('/v1/review/comment/create', {
+    await withRetry(() => this.client.post('/v1/review/comment/create', {
       review_id: reviewId,
       comment: text,
-    });
+    }));
   }
 
   async getStockLevels(): Promise<{ sku: string; stock: number }[]> {
@@ -377,15 +377,15 @@ export class OzonAdapter implements MarketplaceAdapter {
   // ---- FBS-specific (Ozon only) ----
 
   async shipFbsOrder(postingNumber: string, packages: Array<{ products: Array<{ sku: number; quantity: number }> }>): Promise<void> {
-    await this.client.post('/v2/posting/fbs/ship', { posting_number: postingNumber, packages });
+    await withRetry(() => this.client.post('/v2/posting/fbs/ship', { posting_number: postingNumber, packages }));
   }
 
   async getFbsLabel(postingNumbers: string[]): Promise<string> {
-    const resp = await this.client.post(
+    const resp = await withRetry(() => this.client.post(
       '/v2/posting/fbs/package-label',
       { posting_number: postingNumbers },
       { responseType: 'arraybuffer' }
-    );
+    ));
     return Buffer.from(resp.data as ArrayBuffer).toString('base64');
   }
 

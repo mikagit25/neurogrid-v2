@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { authenticate } from '../auth/auth.middleware';
 import { db } from '../../db';
 import {
@@ -46,12 +47,13 @@ advertisingRouter.post('/campaigns/sync', async (req: Request, res: Response) =>
   }
 });
 
+const campaignStatusSchema = z.object({ status: z.enum(['running', 'paused']) });
+
 // PATCH /api/advertising/campaigns/:id/status
 advertisingRouter.patch('/campaigns/:id/status', async (req: Request, res: Response) => {
-  const { status } = req.body;
-  if (!['running', 'paused'].includes(status)) {
-    res.status(400).json({ error: 'Invalid status' }); return;
-  }
+  const parsed = campaignStatusSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+  const { status } = parsed.data;
   const { rows } = await db.query(
     `UPDATE ad_campaigns SET status = $1, synced_at = now()
      WHERE id = $2 AND user_id = $3 RETURNING *`,
@@ -72,14 +74,18 @@ advertisingRouter.get('/dayparting/:campaignId', async (req: Request, res: Respo
   }
 });
 
+const daypartingSchema = z.object({
+  schedule: z.array(z.array(z.boolean()).length(24)).length(7),
+  is_active: z.boolean().optional().default(false),
+});
+
 // PUT /api/advertising/dayparting/:campaignId
 advertisingRouter.put('/dayparting/:campaignId', async (req: Request, res: Response) => {
-  const { schedule, is_active } = req.body;
-  if (!Array.isArray(schedule) || schedule.length !== 7) {
-    res.status(400).json({ error: 'schedule must be 7×24 array' }); return;
-  }
+  const parsed = daypartingSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+  const { schedule, is_active } = parsed.data;
   try {
-    await saveDayparting(req.user!.userId, req.params.campaignId, schedule, !!is_active);
+    await saveDayparting(req.user!.userId, req.params.campaignId, schedule, is_active);
     res.json({ ok: true });
   } catch (err: any) {
     res.status(err.message === 'Campaign not found' ? 404 : 500).json({ error: err.message });
@@ -96,17 +102,22 @@ advertisingRouter.get('/bidder/:campaignId', async (req: Request, res: Response)
   }
 });
 
+const bidderSchema = z.object({
+  is_active: z.boolean(),
+  mode: z.enum(['aggressive_growth', 'hold_position', 'min_spend']),
+  max_drr_pct: z.number().min(1).max(100).default(25),
+  max_bid: z.number().positive().optional(),
+  min_bid: z.number().positive().optional(),
+});
+
 // PUT /api/advertising/bidder/:campaignId
 advertisingRouter.put('/bidder/:campaignId', async (req: Request, res: Response) => {
-  const { is_active, mode, max_drr_pct, max_bid, min_bid } = req.body;
-  if (!['aggressive_growth', 'hold_position', 'min_spend'].includes(mode)) {
-    res.status(400).json({ error: 'Invalid mode' }); return;
-  }
+  const parsed = bidderSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+  const { is_active, mode, max_drr_pct, max_bid, min_bid } = parsed.data;
   try {
     await saveBidderRule(req.user!.userId, req.params.campaignId, {
-      is_active: !!is_active, mode, max_drr_pct: Number(max_drr_pct ?? 25),
-      max_bid: max_bid ? Number(max_bid) : undefined,
-      min_bid: min_bid ? Number(min_bid) : undefined,
+      is_active, mode, max_drr_pct, max_bid, min_bid,
     });
     res.json({ ok: true });
   } catch (err: any) {
