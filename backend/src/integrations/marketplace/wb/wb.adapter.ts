@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { MarketplaceAdapter, ProductInfo, CompetitorPrice, ReviewOrQuestion, SalesDay, FinanceSummary, FinanceRecord, WarehouseStock, MarketplaceOrder } from '../base.adapter';
+import { withRetry } from '../../../utils/retry';
 
 export interface WbCredentials {
   apiKey: string;
@@ -164,9 +165,9 @@ export class WbAdapter implements MarketplaceAdapter {
     const results: WarehouseStock[] = [];
     try {
       // FBO — товары на складах WB
-      const fboResp = await this.statisticsClient.get('/api/v1/supplier/stocks', {
+      const fboResp = await withRetry(() => this.statisticsClient.get('/api/v1/supplier/stocks', {
         params: { dateFrom: new Date(Date.now() - 86400_000).toISOString().slice(0, 10) },
-      });
+      }));
       const fboStocks: any[] = fboResp.data ?? [];
       for (const s of fboStocks) {
         if ((s.quantity ?? 0) <= 0) continue;
@@ -213,9 +214,9 @@ export class WbAdapter implements MarketplaceAdapter {
   async getSalesByDay(dateFrom: string, dateTo: string): Promise<SalesDay[]> {
     try {
       // WB detailed report — covers all operation types per sale_dt
-      const resp = await this.statisticsClient.get('/api/v5/supplier/reportDetailByPeriod', {
+      const resp = await withRetry(() => this.statisticsClient.get('/api/v5/supplier/reportDetailByPeriod', {
         params: { dateFrom, dateTo, limit: 100000, rrdid: 0 },
-      });
+      }));
       const rows: any[] = resp.data ?? [];
       const daily: Record<string, SalesDay> = {};
 
@@ -244,9 +245,9 @@ export class WbAdapter implements MarketplaceAdapter {
 
   async getFinanceSummary(dateFrom: string, dateTo: string): Promise<FinanceSummary> {
     try {
-      const resp = await this.statisticsClient.get('/api/v5/supplier/reportDetailByPeriod', {
+      const resp = await withRetry(() => this.statisticsClient.get('/api/v5/supplier/reportDetailByPeriod', {
         params: { dateFrom, dateTo, limit: 100000, rrdid: 0 },
-      });
+      }));
       const rows: any[] = resp.data ?? [];
       let revenue = 0, commissions = 0, logistics = 0, penalties = 0, netPayout = 0;
       for (const row of rows) {
@@ -272,9 +273,9 @@ export class WbAdapter implements MarketplaceAdapter {
 
   async getFinanceRecords(dateFrom: string, dateTo: string): Promise<FinanceRecord[]> {
     try {
-      const resp = await this.statisticsClient.get('/api/v5/supplier/reportDetailByPeriod', {
+      const resp = await withRetry(() => this.statisticsClient.get('/api/v5/supplier/reportDetailByPeriod', {
         params: { dateFrom, dateTo, limit: 100000, rrdid: 0 },
-      });
+      }));
       const rows: any[] = resp.data ?? [];
       const bySkuTitle: Record<string, FinanceRecord> = {};
 
@@ -373,6 +374,16 @@ export class WbAdapter implements MarketplaceAdapter {
       responseType: 'arraybuffer',
     });
     return Buffer.from(resp.data as ArrayBuffer).toString('base64');
+  }
+
+  // WB adv API: POST /adv/v1/pause  body { advertId }  → pause campaign
+  //             POST /adv/v1/start  body { advertId }  → resume campaign
+  async pauseCampaign(externalId: string): Promise<void> {
+    await this.analyticsClient.post('/adv/v1/pause', { advertId: Number(externalId) });
+  }
+
+  async resumeCampaign(externalId: string): Promise<void> {
+    await this.analyticsClient.post('/adv/v1/start', { advertId: Number(externalId) });
   }
 
   async getOrderStickers(orderIds: string[]): Promise<{ orderId: string; barcodeBase64: string }[]> {

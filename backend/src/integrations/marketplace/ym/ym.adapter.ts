@@ -284,4 +284,12 @@ export class YmAdapter implements MarketplaceAdapter {
       return [];
     }
   }
+
+  async pauseCampaign(_externalId: string): Promise<void> {
+    // Яндекс Маркет advertising API — not yet supported
+  }
+
+  async resumeCampaign(_externalId: string): Promise<void> {
+    // Яндекс Маркет advertising API — not yet supported
+  }
 }

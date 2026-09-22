@@ -79,25 +79,28 @@ export async function processWebhook(body: Record<string, string>): Promise<bool
     return false;
   }
 
-  await db.query('BEGIN');
+  const client = await db.connect();
   try {
-    await db.query(
+    await client.query('BEGIN');
+    await client.query(
       'UPDATE users SET balance = balance + $1 WHERE id = $2',
-      [req.amount, req.user_id]
+      [req.amount, req.user_id],
     );
-    await db.query(
+    await client.query(
       `INSERT INTO transactions (user_id, type, amount, provider_id)
        VALUES ($1, 'topup', $2, $3)`,
-      [req.user_id, req.amount, transaction_id ?? orderId]
+      [req.user_id, req.amount, transaction_id ?? orderId],
     );
-    await db.query(
+    await client.query(
       `UPDATE topup_requests SET status = 'paid', updated_at = now() WHERE id = $1`,
-      [orderId]
+      [orderId],
     );
-    await db.query('COMMIT');
+    await client.query('COMMIT');
   } catch (err) {
-    await db.query('ROLLBACK');
+    await client.query('ROLLBACK');
     throw err;
+  } finally {
+    client.release();
   }
   return true;
 }

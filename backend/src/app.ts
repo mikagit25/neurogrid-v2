@@ -114,6 +114,14 @@ app.use('/images', express.static(path.join(__dirname, '../public/images')));
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
 
+// Global Express error handler — must have exactly 4 args to be recognised by Express
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const status = typeof err.status === 'number' ? err.status : 500;
+  if (status >= 500) console.error('[unhandled route error]', err);
+  res.status(status).json({ error: err.message || 'Internal server error' });
+});
+
 // Start BullMQ workers
 startWorker(processScenarioJob);
 startAutomationWorker();
@@ -133,6 +141,15 @@ setInterval(async () => {
     console.error('[demo-cleanup]', err);
   }
 }, 15 * 60 * 1000);
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+  // Give logger time to flush, then exit — PM2 will restart
+  setTimeout(() => process.exit(1), 500);
+});
 
 app.listen(config.port, () => {
   console.log(`NeuroGrid backend :${config.port} [${config.nodeEnv}]`);

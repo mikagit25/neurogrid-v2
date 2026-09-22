@@ -7,6 +7,17 @@ function required(name: string): string {
   return val;
 }
 
+function requiredKey(name: string, minBytes = 32): string {
+  const val = required(name);
+  if (Buffer.byteLength(val, 'utf8') < minBytes) {
+    throw new Error(
+      `Env var ${name} is too short: need at least ${minBytes} bytes, got ${Buffer.byteLength(val, 'utf8')}. ` +
+      `Generate one with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`,
+    );
+  }
+  return val;
+}
+
 export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '4001', 10),
@@ -27,7 +38,7 @@ export const config = {
   },
 
   encryption: {
-    key: required('ENCRYPTION_KEY'),
+    key: requiredKey('ENCRYPTION_KEY', 32),
   },
 
   llm: {

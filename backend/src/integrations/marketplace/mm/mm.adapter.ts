@@ -321,4 +321,12 @@ export class MmAdapter implements MarketplaceAdapter {
       return [];
     }
   }
+
+  async pauseCampaign(_externalId: string): Promise<void> {
+    // Мегамаркет advertising API — not yet supported
+  }
+
+  async resumeCampaign(_externalId: string): Promise<void> {
+    // Мегамаркет advertising API — not yet supported
+  }
 }

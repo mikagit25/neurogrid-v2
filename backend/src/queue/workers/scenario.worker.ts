@@ -23,17 +23,7 @@ export async function processScenarioJob(job: Job<ScenarioJobData>): Promise<voi
     if (!scenarioRows.length) throw new Error(`Scenario not found: ${scenarioSlug}`);
     const cost: number = parseFloat(scenarioRows[0].price);
 
-    // Verify balance (re-check inside transaction)
-    const { rows: userRows } = await db.query(
-      'SELECT balance FROM users WHERE id = $1 FOR UPDATE',
-      [userId]
-    );
-    if (!userRows.length) throw new Error('User not found');
-    if (parseFloat(userRows[0].balance) < cost) {
-      throw new Error('Insufficient balance');
-    }
-
-    // Build marketplace adapter if connection required
+    // Build marketplace adapter if connection required (before locking balance)
     let adapter = null;
     if (connectionId) {
       const connection = await getConnectionById(connectionId, userId);
@@ -41,32 +31,43 @@ export async function processScenarioJob(job: Job<ScenarioJobData>): Promise<voi
       adapter = createAdapter(connection.platform, connection.credentials_enc);
     }
 
-    // Execute scenario
+    // Execute scenario (outside transaction — can be slow)
     const executor = getExecutor(scenarioSlug);
     const result = await executor.execute({ adapter, inputData: { ...inputData, _runId: runId } });
 
-    // Commit result + deduct balance atomically
-    await db.query('BEGIN');
+    // Atomically verify balance, deduct, and record result — all on one connection
+    const client = await db.connect();
     try {
-      await db.query(
+      await client.query('BEGIN');
+
+      const { rows: userRows } = await client.query(
+        'SELECT balance FROM users WHERE id = $1 FOR UPDATE',
+        [userId],
+      );
+      if (!userRows.length) throw new Error('User not found');
+      if (parseFloat(userRows[0].balance) < cost) throw new Error('Insufficient balance');
+
+      await client.query(
         `UPDATE scenario_runs
          SET status = 'success', result = $1, cost = $2, finished_at = now()
          WHERE id = $3`,
-        [JSON.stringify(result), cost, runId]
+        [JSON.stringify(result), cost, runId],
       );
-      await db.query(
+      await client.query(
         'UPDATE users SET balance = balance - $1 WHERE id = $2',
-        [cost, userId]
+        [cost, userId],
       );
-      await db.query(
+      await client.query(
         `INSERT INTO transactions (user_id, type, amount, run_id)
          VALUES ($1, 'charge', $2, $3)`,
-        [userId, cost, runId]
+        [userId, cost, runId],
       );
-      await db.query('COMMIT');
+      await client.query('COMMIT');
     } catch (err) {
-      await db.query('ROLLBACK');
+      await client.query('ROLLBACK');
       throw err;
+    } finally {
+      client.release();
     }
 
     // Dispatch webhook (non-blocking)

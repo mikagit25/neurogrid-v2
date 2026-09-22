@@ -73,27 +73,30 @@ adminRouter.post('/users/:id/balance', async (req: Request, res: Response) => {
     return;
   }
 
-  await db.query('BEGIN');
+  const client = await db.connect();
   try {
-    const { rows } = await db.query(
+    await client.query('BEGIN');
+    const { rows } = await client.query(
       'UPDATE users SET balance = balance + $1 WHERE id = $2 RETURNING balance',
-      [amount, req.params.id]
+      [amount, req.params.id],
     );
     if (!rows.length) {
-      await db.query('ROLLBACK');
+      await client.query('ROLLBACK');
       res.status(404).json({ error: 'User not found' });
       return;
     }
-    await db.query(
+    await client.query(
       `INSERT INTO transactions (user_id, type, amount, provider_id)
        VALUES ($1, 'topup', $2, $3)`,
-      [req.params.id, Math.abs(amount), `admin:${note}`]
+      [req.params.id, Math.abs(amount), `admin:${note}`],
     );
-    await db.query('COMMIT');
+    await client.query('COMMIT');
     res.json({ ok: true, newBalance: rows[0].balance });
   } catch (err) {
-    await db.query('ROLLBACK');
+    await client.query('ROLLBACK');
     throw err;
+  } finally {
+    client.release();
   }
 });
 

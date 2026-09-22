@@ -116,4 +116,8 @@ export interface MarketplaceAdapter {
   // Orders (FBS/FBO)
   getNewOrders(): Promise<MarketplaceOrder[]>;
   getAllOrders(dateFrom?: string): Promise<MarketplaceOrder[]>;
+
+  // Ad campaign control (dayparting)
+  pauseCampaign(externalId: string): Promise<void>;
+  resumeCampaign(externalId: string): Promise<void>;
 }

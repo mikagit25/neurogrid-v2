@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
+import { withRetry } from '../../../utils/retry';
 import { MarketplaceAdapter, ProductInfo, CompetitorPrice, ReviewOrQuestion, SalesDay, FinanceSummary, FinanceRecord, WarehouseStock, MarketplaceOrder } from '../base.adapter';
 
 export interface OzonCredentials {
@@ -174,11 +175,11 @@ export class OzonAdapter implements MarketplaceAdapter {
       let lastId = '';
       // Paginate through all products
       while (true) {
-        const resp = await this.client.post('/v3/product/info/stocks', {
+        const resp = await withRetry(() => this.client.post('/v3/product/info/stocks', {
           filter: { visibility: 'ALL' },
           last_id: lastId,
           limit: 1000,
-        });
+        }));
         const items: any[] = resp.data.result?.items ?? [];
         for (const item of items) {
           const sku = String(item.product_id);
@@ -222,7 +223,7 @@ export class OzonAdapter implements MarketplaceAdapter {
 
   async getSalesByDay(dateFrom: string, dateTo: string): Promise<SalesDay[]> {
     try {
-      const resp = await this.client.post('/v1/analytics/data', {
+      const resp = await withRetry(() => this.client.post('/v1/analytics/data', {
         date_from: dateFrom,
         date_to: dateTo,
         metrics: ['revenue', 'ordered_units', 'returns', 'cancellations'],
@@ -231,7 +232,7 @@ export class OzonAdapter implements MarketplaceAdapter {
         limit: 1000,
         offset: 0,
         sort: [{ key: 'day', order: 'ASC' }],
-      });
+      }));
       return (resp.data?.result?.data ?? []).map((row: any) => {
         const [revenue = 0, orders = 0, returns = 0] = row.metrics ?? [];
         return {
@@ -250,7 +251,7 @@ export class OzonAdapter implements MarketplaceAdapter {
 
   async getFinanceSummary(dateFrom: string, dateTo: string): Promise<FinanceSummary> {
     try {
-      const resp = await this.client.post('/v1/finance/transaction/list', {
+      const resp = await withRetry(() => this.client.post('/v1/finance/transaction/list', {
         filter: {
           date: { from: `${dateFrom}T00:00:00.000Z`, to: `${dateTo}T23:59:59.999Z` },
           operation_type: [],
@@ -259,7 +260,7 @@ export class OzonAdapter implements MarketplaceAdapter {
         },
         page: 1,
         page_size: 1000,
-      });
+      }));
       const ops: any[] = resp.data?.result?.operations ?? [];
       let revenue = 0, commissions = 0, logistics = 0, penalties = 0;
       for (const op of ops) {
@@ -279,7 +280,7 @@ export class OzonAdapter implements MarketplaceAdapter {
 
   async getFinanceRecords(dateFrom: string, dateTo: string): Promise<FinanceRecord[]> {
     try {
-      const resp = await this.client.post('/v1/finance/transaction/list', {
+      const resp = await withRetry(() => this.client.post('/v1/finance/transaction/list', {
         filter: {
           date: { from: `${dateFrom}T00:00:00.000Z`, to: `${dateTo}T23:59:59.999Z` },
           operation_type: [],
@@ -288,7 +289,7 @@ export class OzonAdapter implements MarketplaceAdapter {
         },
         page: 1,
         page_size: 1000,
-      });
+      }));
       const ops: any[] = resp.data?.result?.operations ?? [];
       const bySku: Record<string, FinanceRecord> = {};
       for (const op of ops) {
@@ -386,6 +387,16 @@ export class OzonAdapter implements MarketplaceAdapter {
       { responseType: 'arraybuffer' }
     );
     return Buffer.from(resp.data as ArrayBuffer).toString('base64');
+  }
+
+  // Ozon adv API: POST /api/client/campaign/pause    body { "campaign_ids": [id] }
+  //               POST /api/client/campaign/activate  body { "campaign_ids": [id] }
+  async pauseCampaign(externalId: string): Promise<void> {
+    await this.client.post('/api/client/campaign/pause', { campaign_ids: [Number(externalId)] });
+  }
+
+  async resumeCampaign(externalId: string): Promise<void> {
+    await this.client.post('/api/client/campaign/activate', { campaign_ids: [Number(externalId)] });
   }
 
   async getProductSticker(postingNumber: string, skus: number[]): Promise<string> {

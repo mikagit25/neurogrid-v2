@@ -72,22 +72,25 @@ export async function acceptInvitation(token: string, acceptingUserId: string): 
   if (inv.owner_id === acceptingUserId) throw new Error('Нельзя принять собственное приглашение');
 
   // Mark accepted + create member record
-  await db.query('BEGIN');
+  const client = await db.connect();
   try {
-    await db.query(
+    await client.query('BEGIN');
+    await client.query(
       'UPDATE team_invitations SET accepted = true WHERE id = $1',
       [inv.id],
     );
-    await db.query(
+    await client.query(
       `INSERT INTO team_members (owner_id, member_user_id, role)
        VALUES ($1, $2, $3)
        ON CONFLICT (owner_id, member_user_id) DO UPDATE SET role = $3`,
       [inv.owner_id, acceptingUserId, inv.role],
     );
-    await db.query('COMMIT');
+    await client.query('COMMIT');
   } catch (err) {
-    await db.query('ROLLBACK');
+    await client.query('ROLLBACK');
     throw err;
+  } finally {
+    client.release();
   }
 }
 

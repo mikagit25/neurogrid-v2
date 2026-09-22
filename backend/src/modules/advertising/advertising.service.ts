@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { db } from '../../db';
 import { decrypt } from '../../utils/encryption';
+import { createAdapter } from '../../integrations/marketplace/factory';
 
 // ---- WB Advertising Client ----
 
@@ -314,11 +315,21 @@ export async function runDaypartingCheck(): Promise<void> {
       const isRunning = row.status === 'running';
 
       if (shouldRun && !isRunning) {
-        console.log(`[dayparting] resume campaign=${row.external_id} platform=${row.platform}`);
-        // TODO: call adapter to resume — for now just log
+        const adapter = createAdapter(row.platform, row.credentials_enc);
+        await adapter.resumeCampaign(row.external_id);
+        await db.query(
+          `UPDATE ad_campaigns SET status = 'running', synced_at = now() WHERE id = $1`,
+          [row.campaign_id],
+        );
+        console.log(`[dayparting] resumed campaign=${row.external_id} platform=${row.platform}`);
       } else if (!shouldRun && isRunning) {
-        console.log(`[dayparting] pause campaign=${row.external_id} platform=${row.platform}`);
-        // TODO: call adapter to pause — for now just log
+        const adapter = createAdapter(row.platform, row.credentials_enc);
+        await adapter.pauseCampaign(row.external_id);
+        await db.query(
+          `UPDATE ad_campaigns SET status = 'paused', synced_at = now() WHERE id = $1`,
+          [row.campaign_id],
+        );
+        console.log(`[dayparting] paused campaign=${row.external_id} platform=${row.platform}`);
       }
     } catch (err: any) {
       console.error(`[dayparting] campaign=${row.external_id}:`, err.message);
