@@ -6,6 +6,7 @@ import { WbAdapter } from '../../integrations/marketplace/wb/wb.adapter';
 import { OzonAdapter } from '../../integrations/marketplace/ozon/ozon.adapter';
 import { YmAdapter } from '../../integrations/marketplace/ym/ym.adapter';
 import { MmAdapter } from '../../integrations/marketplace/mm/mm.adapter';
+import { callLlm } from '../../integrations/llm/llm.client';
 
 export const ordersRouter = Router();
 ordersRouter.use(authenticate);
@@ -277,6 +278,180 @@ ordersRouter.post('/mm/confirm', async (req: Request, res: Response) => {
     const adapter = createAdapter('mm', conn.credentials_enc) as MmAdapter;
     await adapter.confirmOrder(orderId);
     res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/orders/export — CSV download of recent orders
+ordersRouter.get('/export', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const { from, to } = req.query as { from?: string; to?: string };
+  const dateFrom = from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  const dateTo = to || new Date().toISOString().slice(0, 10);
+
+  const rows: any[] = [];
+  try {
+    const connections = await getUserConnections(userId);
+    for (const conn of connections) {
+      try {
+        const adapter = createAdapter(conn.platform, conn.credentials_enc);
+        const orders = await adapter.getAllOrders();
+        for (const o of orders) {
+          for (const item of o.items) {
+            rows.push({
+              platform: conn.platform,
+              connection: conn.display_name,
+              order_id: o.id,
+              sku: item.sku,
+              title: item.title ?? '',
+              quantity: item.quantity ?? 1,
+              price: item.price ?? 0,
+              status: o.status,
+              date: o.createdAt ?? '',
+            });
+          }
+        }
+      } catch { /* skip */ }
+    }
+
+    const header = 'Площадка,Магазин,Номер заказа,SKU,Название,Кол-во,Сумма,Статус,Дата\n';
+    const body = rows.map((r) =>
+      [r.platform, r.connection, r.order_id, r.sku, r.title, r.quantity, r.price, r.status, r.date]
+        .map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`)
+        .join(','),
+    ).join('\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="orders-${dateFrom}-${dateTo}.csv"`);
+    res.send('﻿' + header + body);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/orders/ai-advisor — AI fulfillment advisor based on current pending orders
+ordersRouter.post('/ai-advisor', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  try {
+    const connections = await getUserConnections(userId);
+
+    if (!connections.length) {
+      res.json({
+        summary: 'Нет подключённых магазинов. Подключите WB или Ozon для анализа заказов.',
+        urgent_count: 0,
+        bottlenecks: [],
+        tips: [],
+        actions: ['Подключите магазин на странице «Подключения»'],
+        total_orders: 0,
+        by_status: {},
+        generated_at: new Date().toISOString(),
+      });
+      return;
+    }
+
+    // Fetch new/pending orders from all connections (with timeout protection)
+    const results = await Promise.allSettled(
+      connections.map(async (conn) => {
+        const adapter = createAdapter(conn.platform, conn.credentials_enc);
+        const orders = await adapter.getAllOrders();
+        return orders.map((o: any) => ({ ...o, connectionName: conn.display_name, platform: conn.platform }));
+      }),
+    );
+
+    const orders = results
+      .filter(r => r.status === 'fulfilled')
+      .flatMap(r => (r as PromiseFulfilledResult<any[]>).value);
+
+    const pending = orders.filter(o => ['new', 'awaiting_packaging', 'awaiting_deliver'].includes(o.status));
+
+    if (!pending.length) {
+      res.json({
+        summary: `Нет новых заказов для обработки. Всего заказов в системе: ${orders.length}.`,
+        urgent_count: 0,
+        bottlenecks: [],
+        tips: ['Продолжайте отслеживать поступление заказов'],
+        actions: ['Проверьте историю заказов для анализа тенденций'],
+        total_orders: orders.length,
+        by_status: {},
+        generated_at: new Date().toISOString(),
+      });
+      return;
+    }
+
+    // Aggregate stats
+    const byStatus: Record<string, number> = {};
+    const byPlatform: Record<string, number> = {};
+    for (const o of pending) {
+      byStatus[o.status] = (byStatus[o.status] || 0) + 1;
+      byPlatform[o.platform] = (byPlatform[o.platform] || 0) + 1;
+    }
+
+    const newCount = byStatus['new'] || 0;
+    const packagingCount = byStatus['awaiting_packaging'] || 0;
+    const deliverCount = byStatus['awaiting_deliver'] || 0;
+
+    // Sample: up to 10 most actionable orders
+    const sample = pending
+      .filter(o => o.status === 'new' || o.status === 'awaiting_packaging')
+      .slice(0, 10)
+      .map((o: any) => {
+        const parts = [`статус=${o.status} платф=${o.platform}`];
+        if (o.sku) parts.push(`SKU=${o.sku}`);
+        if (o.price) parts.push(`цена=${o.price}₽`);
+        return parts.join(' ');
+      });
+
+    const prompt = `/no_think Ты — операционный менеджер e-commerce. Дай советы по выполнению заказов.
+
+Ожидают обработки: ${pending.length} заказов
+По статусам: новые=${newCount}, к сборке=${packagingCount}, к отгрузке=${deliverCount}
+По платформам: ${Object.entries(byPlatform).map(([p, n]) => `${p}=${n}`).join(', ')}
+
+Примеры заказов (до 10):
+${sample.join('\n')}
+
+Ответь СТРОГО в JSON:
+{
+  "summary": "<2-3 предложения об общей картине и приоритетах>",
+  "bottlenecks": ["<узкое место 1>", "<узкое место 2>"],
+  "tips": [
+    {"title": "<название совета>", "description": "<подробнее>", "priority": "high|medium|low"}
+  ],
+  "batch_advice": "<совет по группировке заказов для эффективной сборки>",
+  "actions": ["<конкретное действие 1>", "<конкретное действие 2>", "<конкретное действие 3>"]
+}`;
+
+    const { text } = await callLlm([{ role: 'user', content: prompt }], undefined, 1200);
+
+    let result: any = null;
+    try {
+      const stripped = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+      const match = stripped.match(/\{[\s\S]*\}/);
+      result = match ? JSON.parse(match[0]) : null;
+    } catch { result = null; }
+
+    if (!result) {
+      result = {
+        summary: `${pending.length} заказов ожидают обработки: ${newCount} новых, ${packagingCount} к сборке, ${deliverCount} к отгрузке.`,
+        bottlenecks: newCount > 10 ? ['Большое число необработанных новых заказов'] : [],
+        tips: [
+          { title: 'Начните со сборки', description: 'Сначала обработайте заказы в статусе "К сборке"', priority: 'high' as const },
+          { title: 'Подтвердите новые', description: 'Подтвердите и начните сборку новых заказов', priority: 'medium' as const },
+        ],
+        batch_advice: 'Группируйте заказы с одинаковыми товарами для более быстрой сборки.',
+        actions: ['Начните с обработки заказов "К сборке"', 'Подтвердите новые заказы', 'Создайте поставку для WB заказов'],
+      };
+    }
+
+    res.json({
+      ...result,
+      total_orders: orders.length,
+      pending_count: pending.length,
+      urgent_count: newCount + packagingCount,
+      by_status: byStatus,
+      by_platform: byPlatform,
+      generated_at: new Date().toISOString(),
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

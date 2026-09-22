@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   getPricingRules, savePricingRule, deletePricingRule,
   applyPricingRuleNow, getPricingHistory, getConnections,
+  optimizePrice, type PriceOptimizeResult,
 } from '@/lib/api';
 import type { PricingRule, PriceChangeLog, Connection } from '@/lib/api';
 
@@ -12,6 +13,7 @@ const STRATEGY_LABELS: Record<string, string> = {
   margin: 'Наценка от себестоимости',
   competitive: 'Ниже текущей цены',
   dynamic: 'Динамика (вых./будни)',
+  competitor_based: 'По цене конкурента (умный репрайсер)',
 };
 
 const PLATFORM_BADGE: Record<string, string> = {
@@ -38,12 +40,14 @@ function RuleModal({
   const [name, setName] = useState(rule?.name ?? '');
   const [connectionId, setConnectionId] = useState(rule?.connection_id ?? '');
   const [sku, setSku] = useState(rule?.sku ?? '');
-  const [strategy, setStrategy] = useState<'margin' | 'competitive' | 'fixed' | 'dynamic'>((rule?.strategy as any) ?? 'margin');
+  const [strategy, setStrategy] = useState<'margin' | 'competitive' | 'fixed' | 'dynamic' | 'competitor_based'>((rule?.strategy as any) ?? 'margin');
   const [config, setConfig] = useState<Record<string, string>>({
     fixedPrice: String(rule?.config?.fixedPrice ?? ''),
     margin: String(rule?.config?.margin ?? '30'),
     discount: String(rule?.config?.discount ?? '5'),
     weekendMultiplier: String(rule?.config?.weekendMultiplier ?? '1.1'),
+    competitorMode: String(rule?.config?.competitorMode ?? 'undercut'),
+    competitorPct: String(rule?.config?.competitorPct ?? '2'),
     minPrice: String(rule?.config?.minPrice ?? ''),
     maxPrice: String(rule?.config?.maxPrice ?? ''),
   });
@@ -63,6 +67,7 @@ function RuleModal({
       if (strategy === 'margin') cfg.margin = Number(config.margin);
       if (strategy === 'competitive') cfg.discount = Number(config.discount);
       if (strategy === 'dynamic') cfg.weekendMultiplier = Number(config.weekendMultiplier);
+      if (strategy === 'competitor_based') { cfg.competitorMode = config.competitorMode; cfg.competitorPct = Number(config.competitorPct); }
 
       const saved = await savePricingRule({
         id: rule?.id,
@@ -131,6 +136,23 @@ function RuleModal({
         {strategy === 'margin' && <InputField label="Наценка (%)" k="margin" placeholder="30" />}
         {strategy === 'competitive' && <InputField label="Скидка от текущей цены (%)" k="discount" placeholder="5" />}
         {strategy === 'dynamic' && <InputField label="Коэффициент в выходные" k="weekendMultiplier" placeholder="1.1" />}
+        {strategy === 'competitor_based' && (
+          <div className="space-y-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+            <p className="text-xs text-blue-700 font-medium">Использует цены конкурентов из раздела SEO → Конкуренты</p>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Режим</label>
+              <select value={config.competitorMode} onChange={(e) => setConf('competitorMode', e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400">
+                <option value="match">Повторить цену конкурента</option>
+                <option value="undercut">Дешевле конкурента на N%</option>
+                <option value="above">Дороже конкурента на N%</option>
+              </select>
+            </div>
+            {config.competitorMode !== 'match' && (
+              <InputField label="Разница (%)" k="competitorPct" placeholder="2" />
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <InputField label="Мин. цена (₽)" k="minPrice" />
@@ -207,6 +229,154 @@ function HistoryDrawer({ ruleId, ruleName, onClose }: { ruleId: string; ruleName
   );
 }
 
+// ---- AI Price Optimizer tab ----
+const STRATEGY_RU: Record<string, string> = {
+  premium:      'Премиум',
+  competitive:  'Конкурентная',
+  penetration:  'Проникновение',
+  value:        'Ценность',
+};
+
+function OptimizerTab() {
+  const [sku, setSku]           = useState('');
+  const [platform, setPlatform] = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [result, setResult]     = useState<PriceOptimizeResult | null>(null);
+  const [error, setError]       = useState('');
+
+  async function handleAnalyze(e: React.FormEvent) {
+    e.preventDefault();
+    if (!sku.trim()) return;
+    setLoading(true);
+    setError('');
+    setResult(null);
+    try {
+      const r = await optimizePrice(sku.trim(), platform || undefined);
+      setResult(r);
+    } catch (err: any) {
+      setError(err.message ?? 'Ошибка');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <form onSubmit={handleAnalyze} className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+        <p className="text-sm text-slate-500">Введите SKU — AI проанализирует цены конкурентов, маржу и продажи и предложит оптимальную цену.</p>
+        <div className="flex gap-3">
+          <input
+            value={sku} onChange={e => setSku(e.target.value)}
+            placeholder="SKU товара"
+            className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 font-mono"
+          />
+          <select
+            value={platform} onChange={e => setPlatform(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+          >
+            <option value="">Все площадки</option>
+            <option value="wb">WildBerries</option>
+            <option value="ozon">Ozon</option>
+          </select>
+          <button
+            type="submit" disabled={loading || !sku.trim()}
+            className="px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
+          >
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Анализ...
+              </span>
+            ) : 'Оптимизировать'}
+          </button>
+        </div>
+      </form>
+
+      {error && <div className="p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm">{error}</div>}
+
+      {result && (
+        <div className="space-y-4">
+          {/* Current state */}
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <p className="text-xs text-slate-400 font-medium mb-3 uppercase tracking-wide">Текущее состояние</p>
+            <p className="font-semibold text-slate-900 mb-3">{result.title}</p>
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { label: 'Средняя цена (30д)', value: result.current_price ? `${result.current_price.toLocaleString('ru-RU')} ₽` : '—' },
+                { label: 'Себестоимость',       value: result.purchase_price ? `${result.purchase_price.toLocaleString('ru-RU')} ₽` : '—' },
+                { label: 'Текущая маржа',        value: result.margin_pct != null ? `${result.margin_pct}%` : '—' },
+              ].map(k => (
+                <div key={k.label} className="text-center bg-slate-50 rounded-lg py-3">
+                  <p className="text-xs text-slate-400 mb-1">{k.label}</p>
+                  <p className="text-lg font-bold text-slate-900">{k.value}</p>
+                </div>
+              ))}
+            </div>
+            {result.competitors.length > 0 && (
+              <div className="mt-4">
+                <p className="text-xs text-slate-400 mb-2">Конкуренты</p>
+                <div className="flex flex-wrap gap-2">
+                  {result.competitors.map((c, i) => (
+                    <span key={i} className="px-3 py-1 bg-slate-100 rounded-full text-xs text-slate-600">
+                      {c.name ?? c.platform}: <span className="font-semibold">{c.last_price.toLocaleString('ru-RU')} ₽</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* AI Suggestion */}
+          {result.suggestion ? (
+            <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl border border-purple-200 p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-purple-500 font-semibold uppercase tracking-wide">AI Рекомендация</p>
+                <span className="px-2.5 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
+                  {STRATEGY_RU[result.suggestion.strategy] ?? result.suggestion.strategy}
+                </span>
+              </div>
+
+              <div className="flex items-end gap-4">
+                <div>
+                  <p className="text-xs text-slate-400 mb-0.5">Рекомендуемая цена</p>
+                  <p className="text-4xl font-bold text-purple-700">
+                    {result.suggestion.suggested_price.toLocaleString('ru-RU')} ₽
+                  </p>
+                </div>
+                <div className="pb-1 text-sm text-slate-500">
+                  диапазон: {result.suggestion.price_range.min.toLocaleString('ru-RU')} — {result.suggestion.price_range.max.toLocaleString('ru-RU')} ₽
+                </div>
+                {result.suggestion.expected_margin_pct != null && (
+                  <div className="pb-1 ml-auto">
+                    <p className="text-xs text-slate-400 mb-0.5">Ожидаемая маржа</p>
+                    <p className={`text-xl font-bold ${result.suggestion.expected_margin_pct >= 20 ? 'text-green-600' : result.suggestion.expected_margin_pct >= 10 ? 'text-amber-600' : 'text-red-600'}`}>
+                      {result.suggestion.expected_margin_pct}%
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-sm text-slate-700 leading-relaxed">{result.suggestion.reasoning}</p>
+
+              {result.suggestion.caution && (
+                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <span className="text-amber-500 mt-0.5">⚠</span>
+                  <p className="text-xs text-amber-700">{result.suggestion.caution}</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="bg-slate-50 rounded-xl border border-slate-200 p-5">
+              <p className="text-sm text-slate-500">AI не смог сформировать предложение. Возможно, недостаточно данных.</p>
+              {result.raw && <pre className="text-xs text-slate-400 mt-2 whitespace-pre-wrap">{result.raw}</pre>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- Main page ----
 export default function PriceRulesPage() {
   const [rules, setRules] = useState<PricingRule[]>([]);
@@ -216,7 +386,7 @@ export default function PriceRulesPage() {
   const [editRule, setEditRule] = useState<Partial<PricingRule> | null | false>(false);
   const [historyRule, setHistoryRule] = useState<PricingRule | null>(null);
   const [applying, setApplying] = useState<string | null>(null);
-  const [tab, setTab] = useState<'rules' | 'history'>('rules');
+  const [tab, setTab] = useState<'rules' | 'history' | 'optimizer'>('rules');
   const [applyMsg, setApplyMsg] = useState('');
 
   const load = useCallback(async () => {
@@ -289,15 +459,21 @@ export default function PriceRulesPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit">
-        {(['rules', 'history'] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-            {t === 'rules' ? `Правила (${rules.length})` : `История (${history.length})`}
+        {([
+          { v: 'rules',     l: `Правила (${rules.length})` },
+          { v: 'history',   l: `История (${history.length})` },
+          { v: 'optimizer', l: '✨ AI-оптимизатор' },
+        ] as { v: 'rules' | 'history' | 'optimizer'; l: string }[]).map(({ v, l }) => (
+          <button key={v} onClick={() => setTab(v)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+            {l}
           </button>
         ))}
       </div>
 
-      {loading ? (
+      {tab === 'optimizer' ? (
+        <OptimizerTab />
+      ) : loading ? (
         <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" /></div>
       ) : tab === 'rules' ? (
         rules.length === 0 ? (

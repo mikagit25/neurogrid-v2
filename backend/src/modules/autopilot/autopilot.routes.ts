@@ -206,3 +206,96 @@ autopilotRouter.get('/pricing-rules/:id/history', async (req: Request, res: Resp
     res.status(500).json({ error: (err as Error).message });
   }
 });
+
+// POST /api/autopilot/optimize-price — AI price suggestion for a SKU
+autopilotRouter.post('/optimize-price', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const { sku, platform } = req.body;
+  if (!sku) { res.status(400).json({ error: 'sku is required' }); return; }
+
+  try {
+    // Current price from price_change_log (latest) or user_catalog
+    const { rows: catalogRows } = await db.query(
+      `SELECT uc.title, uc.purchase_price,
+              (SELECT pcl.new_price FROM price_change_log pcl WHERE pcl.sku = uc.sku AND pcl.user_id = $1 ORDER BY pcl.applied_at DESC LIMIT 1) AS last_set_price
+       FROM user_catalog uc
+       WHERE uc.user_id = $1 AND uc.sku = $2 ${platform ? 'AND uc.platform = $3' : ''}
+       LIMIT 1`,
+      platform ? [userId, sku, platform] : [userId, sku],
+    );
+    const catalog = catalogRows[0] ?? null;
+
+    // 30-day revenue + avg selling price
+    const dateFrom = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
+    const { rows: finRows } = await db.query(
+      `SELECT AVG(fr.price)::numeric AS avg_price, SUM(fr.revenue)::numeric AS revenue,
+              SUM(fr.quantity)::integer AS qty
+       FROM finance_records fr
+       WHERE fr.user_id = $1 AND fr.sku = $2 AND fr.date >= $3`,
+      [userId, sku, dateFrom],
+    );
+    const fin = finRows[0];
+
+    // Competitor prices for this SKU
+    const { rows: compRows } = await db.query(
+      `SELECT cs.name, cs.platform, cs.last_price, cs.alert_pct
+       FROM competitor_skus cs
+       WHERE cs.user_id = $1 AND cs.our_sku = $2 AND cs.is_active = true AND cs.last_price IS NOT NULL`,
+      [userId, sku],
+    );
+
+    const currentPrice = Number(fin?.avg_price ?? catalog?.last_set_price ?? 0);
+    const purchasePrice = Number(catalog?.purchase_price ?? 0);
+    const margin = currentPrice > 0 && purchasePrice > 0
+      ? ((currentPrice - purchasePrice) / currentPrice * 100).toFixed(1)
+      : null;
+
+    const competitorSummary = compRows.length
+      ? compRows.map((c: any) => `- ${c.name ?? c.platform}: ${c.last_price} ₽`).join('\n')
+      : 'Данных нет';
+
+    const prompt = `Ты эксперт по ценообразованию на маркетплейсах (WildBerries, Ozon).
+
+Товар: "${catalog?.title ?? sku}" (SKU: ${sku}${platform ? ', ' + platform : ''})
+Текущая средняя цена продажи: ${currentPrice > 0 ? currentPrice + ' ₽' : 'неизвестно'}
+Себестоимость: ${purchasePrice > 0 ? purchasePrice + ' ₽' : 'неизвестно'}
+Текущая маржа: ${margin != null ? margin + '%' : 'неизвестно'}
+Продажи за 30 дней: ${fin?.qty ?? 0} шт., выручка ${Math.round(Number(fin?.revenue ?? 0))} ₽
+
+Цены конкурентов:
+${competitorSummary}
+
+Дай рекомендацию по оптимальной цене. Ответь ТОЛЬКО в формате JSON:
+{
+  "suggested_price": <число>,
+  "price_range": {"min": <число>, "max": <число>},
+  "reasoning": "<2-3 предложения — почему именно эта цена>",
+  "strategy": "premium" | "competitive" | "penetration" | "value",
+  "expected_margin_pct": <число или null>,
+  "caution": "<краткое предупреждение или null>"
+}`;
+
+    const { callLlm } = await import('../../integrations/llm/llm.client');
+    const { text } = await callLlm([{ role: 'user', content: prompt }], 'claude-haiku-4-5-20251001', 600);
+
+    let suggestion: any = null;
+    try {
+      const match = text.match(/\{[\s\S]*\}/);
+      suggestion = match ? JSON.parse(match[0]) : null;
+    } catch { suggestion = null; }
+
+    res.json({
+      sku,
+      platform: platform ?? null,
+      title: catalog?.title ?? sku,
+      current_price: currentPrice || null,
+      purchase_price: purchasePrice || null,
+      margin_pct: margin ? parseFloat(margin) : null,
+      competitors: compRows,
+      suggestion,
+      raw: suggestion ? undefined : text,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});

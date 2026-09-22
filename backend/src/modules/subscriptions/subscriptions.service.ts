@@ -52,6 +52,55 @@ export async function upgradePlan(userId: string, plan: Plan, months = 1) {
   return rows[0];
 }
 
+export async function payForPlan(userId: string, plan: Plan): Promise<{ subscription: any; newBalance: number }> {
+  if (plan === 'free') throw Object.assign(new Error('Cannot pay for free plan'), { status: 400 });
+  const price = PLAN_PRICES[plan];
+
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows: userRows } = await client.query(
+      'SELECT balance FROM users WHERE id = $1 FOR UPDATE',
+      [userId],
+    );
+    const balance = parseFloat(userRows[0]?.balance ?? '0');
+    if (balance < price) {
+      throw Object.assign(
+        new Error(`Недостаточно средств: нужно ${price} ₽, на балансе ${balance.toFixed(2)} ₽`),
+        { status: 402 },
+      );
+    }
+
+    const newBalance = balance - price;
+    await client.query('UPDATE users SET balance = $1 WHERE id = $2', [newBalance, userId]);
+
+    await client.query(
+      `INSERT INTO transactions (user_id, type, amount, provider_id)
+       VALUES ($1, 'charge', $2, $3)`,
+      [userId, price, `subscription:${plan}`],
+    );
+
+    const expiresAt = new Date();
+    expiresAt.setMonth(expiresAt.getMonth() + 1);
+    const { rows: subRows } = await client.query(
+      `INSERT INTO subscriptions (user_id, plan, expires_at, updated_at)
+       VALUES ($1, $2, $3, now())
+       ON CONFLICT (user_id) DO UPDATE SET plan = $2, expires_at = $3, updated_at = now()
+       RETURNING *`,
+      [userId, plan, expiresAt],
+    );
+
+    await client.query('COMMIT');
+    return { subscription: subRows[0], newBalance };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function checkFeatureAccess(userId: string, feature: 'warehouse' | 'finance') {
   const sub = await getSubscription(userId);
   const limits = sub.limits;

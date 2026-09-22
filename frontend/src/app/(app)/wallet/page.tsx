@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { getMe, topupWallet, getTransactions, getTopups } from '@/lib/api';
+import { getMe, topupWallet, getTransactions, getTopups, getMySubscription } from '@/lib/api';
 import { setUser } from '@/lib/auth';
-import type { Transaction, Topup } from '@/lib/api';
+import type { Transaction, Topup, SubscriptionInfo } from '@/lib/api';
 import type { StoredUser } from '@/lib/auth';
+import Link from 'next/link';
 
 const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   debit: 'Списание',
@@ -14,7 +15,12 @@ const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   run: 'Запуск',
   refund: 'Возврат',
   charge: 'Запуск',
+  subscription: 'Подписка',
 };
+
+function isCreditType(type: string) {
+  return type === 'credit' || type === 'topup' || type === 'refund';
+}
 
 const TOPUP_STATUS_CLASSES: Record<string, string> = {
   pending: 'bg-amber-100 text-amber-700',
@@ -72,18 +78,23 @@ export default function WalletPage() {
   const [user, setUserState] = useState<StoredUser | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [topups, setTopups] = useState<Topup[]>([]);
+  const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [amount, setAmount] = useState('');
   const [topupLoading, setTopupLoading] = useState(false);
   const [topupError, setTopupError] = useState('');
   const [activeTab, setActiveTab] = useState<'transactions' | 'topups'>('transactions');
 
+  const PLAN_NAMES: Record<string, string> = { free: 'Бесплатный', start: 'Старт', business: 'Бизнес' };
+  const PLAN_PRICES: Record<string, number> = { free: 0, start: 490, business: 990 };
+
   const loadData = useCallback(async () => {
     try {
-      const [meData, txData, topupData] = await Promise.all([
+      const [meData, txData, topupData, subData] = await Promise.all([
         getMe(),
         getTransactions(),
         getTopups(),
+        getMySubscription().catch(() => null),
       ]);
       const stored: StoredUser = {
         id: meData.user.id,
@@ -95,6 +106,7 @@ export default function WalletPage() {
       setUserState(stored);
       setTransactions(txData);
       setTopups(topupData);
+      if (subData) setSubscription(subData.subscription);
     } catch {
       // ignore
     } finally {
@@ -161,6 +173,50 @@ export default function WalletPage() {
             <p className="font-medium">Платёж не прошёл</p>
             <p className="text-sm text-red-600">Попробуйте ещё раз или используйте другую карту.</p>
           </div>
+        </div>
+      )}
+
+      {/* Subscription info */}
+      {!loading && subscription && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-4">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+              subscription.plan === 'free' ? 'bg-slate-100' : 'bg-purple-100'
+            }`}>
+              <svg className={`w-5 h-5 ${subscription.plan === 'free' ? 'text-slate-400' : 'text-purple-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Текущий тариф</p>
+              <p className="font-semibold text-slate-900">{PLAN_NAMES[subscription.plan] ?? subscription.plan}</p>
+            </div>
+            {subscription.plan !== 'free' && subscription.expires_at && (
+              <div className="hidden sm:block border-l border-slate-200 pl-4">
+                <p className="text-xs text-slate-500">Следующее списание</p>
+                <p className="font-semibold text-slate-900">
+                  {new Date(subscription.expires_at).toLocaleDateString('ru-RU')}
+                  <span className="ml-2 text-sm font-normal text-slate-500">
+                    —{' '}{PLAN_PRICES[subscription.plan] ?? 0} ₽/мес
+                  </span>
+                </p>
+              </div>
+            )}
+            {subscription.plan !== 'free' && (
+              <div className="hidden sm:block border-l border-slate-200 pl-4">
+                <p className="text-xs text-slate-500">Лимит запусков</p>
+                <p className="font-semibold text-slate-900">
+                  {subscription.limits?.runsPerMonth >= 9999 ? 'Безлимит' : `${subscription.limits?.runsPerMonth}/мес`}
+                </p>
+              </div>
+            )}
+          </div>
+          <Link
+            href="/pricing"
+            className="shrink-0 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            {subscription.plan === 'free' ? 'Обновить тариф' : 'Изменить тариф'}
+          </Link>
         </div>
       )}
 
@@ -272,15 +328,17 @@ export default function WalletPage() {
                   {transactions.slice(0, 20).map((tx) => (
                     <tr key={tx.id} className="hover:bg-slate-50/50">
                       <td className="px-5 py-3 text-slate-700">
-                        {TRANSACTION_TYPE_LABELS[tx.type] || tx.type}
+                        {tx.provider_id?.startsWith('subscription')
+                          ? 'Подписка'
+                          : TRANSACTION_TYPE_LABELS[tx.type] || tx.type}
                         {tx.run_id && (
                           <span className="text-xs text-slate-400 ml-1">#{tx.run_id.slice(0, 8)}</span>
                         )}
                       </td>
                       <td className={`px-5 py-3 font-medium ${
-                        tx.type === 'charge' ? 'text-red-600' : 'text-green-600'
+                        isCreditType(tx.type) ? 'text-green-600' : 'text-red-600'
                       }`}>
-                        {tx.type === 'charge' ? '−' : '+'}{Number(tx.amount).toLocaleString('ru-RU')} ₽
+                        {isCreditType(tx.type) ? '+' : '−'}{Number(tx.amount).toLocaleString('ru-RU')} ₽
                       </td>
                       <td className="px-5 py-3 text-slate-500">{formatDate(tx.created_at)}</td>
                     </tr>

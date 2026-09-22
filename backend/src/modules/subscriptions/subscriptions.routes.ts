@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { authenticate } from '../auth/auth.middleware';
-import { getSubscription, upgradePlan, PLAN_LIMITS, PLAN_PRICES, Plan } from './subscriptions.service';
+import { getSubscription, upgradePlan, payForPlan, PLAN_LIMITS, PLAN_PRICES, Plan } from './subscriptions.service';
 
 export const subscriptionsRouter = Router();
 subscriptionsRouter.use(authenticate);
@@ -27,6 +27,21 @@ subscriptionsRouter.post('/upgrade', async (req: Request, res: Response) => {
     res.json({ ok: true, subscription: sub });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/subscriptions/pay — deduct from wallet and activate plan
+subscriptionsRouter.post('/pay', async (req: Request, res: Response) => {
+  const { plan } = req.body ?? {};
+  if (!['start', 'business'].includes(plan)) {
+    res.status(400).json({ error: 'Invalid plan. Use: start | business' });
+    return;
+  }
+  try {
+    const { subscription, newBalance } = await payForPlan(req.user!.userId, plan as Plan);
+    res.json({ ok: true, subscription, newBalance });
+  } catch (err: any) {
+    res.status(err.status ?? 500).json({ error: err.message });
   }
 });
 

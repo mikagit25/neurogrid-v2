@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getRuns, getScenarios, getConnections, getProducts, apiRequest } from '@/lib/api';
+import { getRuns, getScenarios, getConnections, getProducts, apiRequest, getAlertEvents, getReviewStats, getRestockForecasts, getRunQuota, getOnboarding, markOnboardingStep, dismissOnboarding, getLatestReport, getFinanceToday, getGoalProgress, getDashboardRecommendations, type FinanceToday, type GoalProgress, type DashboardRecommendation } from '@/lib/api';
 import { getUser } from '@/lib/auth';
-import type { Run, Scenario, Connection, ProductSummary } from '@/lib/api';
+import type { Run, Scenario, Connection, ProductSummary, ReviewStats, RestockForecast, WeeklyReport } from '@/lib/api';
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
 
@@ -81,6 +81,15 @@ export default function DashboardPage() {
   const [stocksAccessible, setStocksAccessible] = useState(true);
   const [financeSummary, setFinanceSummary] = useState<FinancePlatform[] | null>(null);
   const [financeAccessible, setFinanceAccessible] = useState(true);
+  const [alertUnread, setAlertUnread] = useState(0);
+  const [criticalSupplyCount, setCriticalSupplyCount] = useState(0);
+  const [reviewStats, setReviewStats] = useState<ReviewStats | null>(null);
+  const [quota, setQuota] = useState<{ used: number; max: number; unlimited: boolean } | null>(null);
+  const [onboarding, setOnboarding] = useState<{ steps_done: string[]; dismissed: boolean } | null>(null);
+  const [latestReport, setLatestReport] = useState<WeeklyReport | null>(null);
+  const [financeToday, setFinanceToday] = useState<FinanceToday | null>(null);
+  const [goalProgress, setGoalProgress] = useState<GoalProgress | null>(null);
+  const [recommendations, setRecommendations] = useState<DashboardRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const user = getUser();
 
@@ -96,7 +105,28 @@ export default function DashboardPage() {
         setScenarios(scenariosData);
         setConnections(connsData);
 
+        // Run quota + onboarding + latest report (always load regardless of connections)
+        try { const q = await getRunQuota(); setQuota(q); } catch { /* ignore */ }
+        try { const ob = await getOnboarding(); setOnboarding(ob); } catch { /* ignore */ }
+        try { const r = await getLatestReport(); setLatestReport(r); } catch { /* ignore */ }
+
         if (connsData.length > 0) {
+          // Operational status
+          try {
+            const { unread_count } = await getAlertEvents(50);
+            setAlertUnread(unread_count);
+          } catch { /* ignore */ }
+
+          try {
+            const forecasts: RestockForecast[] = await getRestockForecasts();
+            setCriticalSupplyCount(forecasts.filter(f => f.status === 'critical' || f.status === 'out_of_stock').length);
+          } catch { /* ignore */ }
+
+          try {
+            const rs = await getReviewStats();
+            setReviewStats(rs);
+          } catch { /* ignore */ }
+
           // Products
           try {
             const { summary } = await getProducts(undefined, 50);
@@ -120,6 +150,24 @@ export default function DashboardPage() {
           } catch (e: any) {
             if (e.status === 403) setFinanceAccessible(false);
           }
+
+          // Today's pulse (requires business plan)
+          try {
+            const td = await getFinanceToday();
+            setFinanceToday(td);
+          } catch { /* ignore if no access */ }
+
+          // Goal pace for warning banner
+          try {
+            const gp = await getGoalProgress();
+            setGoalProgress(gp);
+          } catch { /* ignore if no goals or no access */ }
+
+          // Smart recommendations
+          try {
+            const recs = await getDashboardRecommendations();
+            setRecommendations(recs);
+          } catch { /* ignore */ }
         }
       } catch {
         // Ignore
@@ -165,37 +213,55 @@ export default function DashboardPage() {
         <p className="text-slate-500 mt-1">Добро пожаловать в NeuroGrid</p>
       </div>
 
-      {/* Onboarding for new users */}
-      {!loading && !hasConnections && (
-        <div className="bg-gradient-to-br from-purple-600 to-purple-800 rounded-2xl p-5 text-white">
-          <h2 className="font-bold text-lg mb-0.5">Начните за 3 шага</h2>
-          <p className="text-purple-200 text-sm mb-4">Первый результат — через 2 минуты после подключения</p>
-
-          {/* Steps — horizontal scroll on mobile, grid on desktop */}
-          <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 sm:grid sm:grid-cols-3 sm:overflow-visible">
-            {[
-              { n: '1', title: 'Магазин', desc: 'API-ключ WB, Ozon, YM или Мегамаркет', href: '/connections' },
-              { n: '2', title: 'Каталог', desc: 'Listing Score каждого товара', href: '/products' },
-              { n: '3', title: 'Агенты', desc: 'Цены, SEO, ответы на отзывы', href: '/automations' },
-            ].map((s) => (
-              <Link key={s.n} href={s.href}
-                className="bg-white/10 hover:bg-white/20 rounded-xl p-3.5 transition-colors shrink-0 w-36 sm:w-auto">
-                <div className="w-6 h-6 rounded-full bg-white/20 text-white text-xs font-bold flex items-center justify-center mb-2">{s.n}</div>
-                <p className="font-semibold text-sm leading-tight">{s.title}</p>
-                <p className="text-purple-200 text-xs mt-1 leading-snug">{s.desc}</p>
-              </Link>
-            ))}
+      {/* ── Onboarding checklist ─────────────────────────────────────── */}
+      {!loading && onboarding && !onboarding.dismissed && (() => {
+        const STEPS = [
+          { id: 'connect', title: 'Подключить магазин', desc: 'API-ключ WB, Ozon, YM или Мегамаркет', href: '/connections', done: hasConnections },
+          { id: 'products', title: 'Посмотреть каталог', desc: 'Listing Score и качество карточек', href: '/products', done: onboarding.steps_done.includes('products') || (!!productSummary && productSummary.total > 0) },
+          { id: 'scenario', title: 'Запустить AI-сценарий', desc: 'Генерация, SEO, ответы на отзывы', href: '/scenarios', done: onboarding.steps_done.includes('scenario') || runs.length > 0 },
+          { id: 'pricing', title: 'Настроить цены', desc: 'Правила ценообразования', href: '/price-rules', done: onboarding.steps_done.includes('pricing') },
+        ];
+        const doneCount = STEPS.filter(s => s.done).length;
+        if (doneCount === STEPS.length) return null;
+        return (
+          <div className="bg-white rounded-2xl border border-slate-200 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="font-semibold text-slate-800">Начало работы</h2>
+                <p className="text-sm text-slate-500 mt-0.5">{doneCount} из {STEPS.length} шагов выполнено</p>
+              </div>
+              <button
+                onClick={async () => { await dismissOnboarding(); setOnboarding(o => o ? { ...o, dismissed: true } : o); }}
+                className="text-slate-400 hover:text-slate-600 text-xs"
+              >
+                Скрыть
+              </button>
+            </div>
+            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden mb-4">
+              <div className="h-full bg-purple-600 rounded-full transition-all" style={{ width: `${Math.round((doneCount / STEPS.length) * 100)}%` }} />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {STEPS.map(s => (
+                <Link key={s.id} href={s.href}
+                  onClick={() => { if (!s.done) { markOnboardingStep(s.id).catch(() => {}); setOnboarding(o => o ? { ...o, steps_done: [...o.steps_done, s.id] } : o); } }}
+                  className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${s.done ? 'bg-green-50 border-green-200' : 'bg-slate-50 border-slate-200 hover:border-purple-300 hover:bg-purple-50'}`}>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${s.done ? 'bg-green-500' : 'bg-slate-200'}`}>
+                    {s.done
+                      ? <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                      : <div className="w-2 h-2 rounded-full bg-slate-400" />
+                    }
+                  </div>
+                  <div>
+                    <p className={`text-sm font-medium ${s.done ? 'text-green-700 line-through' : 'text-slate-800'}`}>{s.title}</p>
+                    <p className="text-xs text-slate-500">{s.desc}</p>
+                  </div>
+                  {!s.done && <svg className="w-4 h-4 text-slate-400 ml-auto flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>}
+                </Link>
+              ))}
+            </div>
           </div>
-
-          <Link href="/connections"
-            className="mt-4 flex items-center justify-center gap-2 w-full py-3 bg-white text-purple-700 font-bold rounded-xl text-sm hover:bg-purple-50 transition-colors">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-            </svg>
-            Подключить магазин
-          </Link>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Product quality */}
       {productSummary && productSummary.total > 0 && (
@@ -230,6 +296,186 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* ── Pulse row ─────────────────────────────────────────────────── */}
+      {hasConnections && !loading && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            {
+              label: 'Выручка 30 дн.',
+              value: totalRevenue > 0 ? `${fmt(totalRevenue)} ₽` : '—',
+              sub: totalNetPayout > 0 ? `выплата ${fmt(totalNetPayout)} ₽` : 'нет данных',
+              icon: '💰',
+              href: '/finance',
+              color: 'text-green-700',
+            },
+            {
+              label: 'Мало на складе',
+              value: String(lowStockCount),
+              sub: lowStockCount > 0 ? 'товаров ≤ 10 шт' : 'всё в норме',
+              icon: lowStockCount > 0 ? '⚠️' : '✅',
+              href: '/warehouse',
+              color: lowStockCount > 0 ? 'text-amber-600' : 'text-green-600',
+            },
+            {
+              label: 'Без ответа',
+              value: reviewStats ? String(reviewStats.unanswered ?? 0) : '—',
+              sub: 'отзывов без ответа',
+              icon: '💬',
+              href: '/reviews',
+              color: (reviewStats?.unanswered ?? 0) > 0 ? 'text-amber-600' : 'text-green-600',
+            },
+            {
+              label: 'Критич. запасы',
+              value: String(criticalSupplyCount),
+              sub: criticalSupplyCount > 0 ? 'нужно пополнить' : 'запасы в норме',
+              icon: criticalSupplyCount > 0 ? '🔴' : '🟢',
+              href: '/supply',
+              color: criticalSupplyCount > 0 ? 'text-red-600' : 'text-green-600',
+            },
+          ].map(tile => (
+            <Link
+              key={tile.label}
+              href={tile.href}
+              className="bg-white rounded-xl border border-slate-200 p-4 hover:border-purple-300 hover:shadow-sm transition-all group"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-slate-500">{tile.label}</p>
+                <span className="text-base">{tile.icon}</span>
+              </div>
+              <p className={`text-xl font-bold ${tile.color}`}>{tile.value}</p>
+              <p className="text-xs text-slate-400 mt-0.5 group-hover:text-slate-600 transition-colors">{tile.sub} →</p>
+            </Link>
+          ))}
+        </div>
+      )}
+
+      {/* ── Today's Pulse ─────────────────────────────────────────────── */}
+      {financeToday && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="font-semibold text-slate-800">Сегодня</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}
+              </p>
+            </div>
+            <Link href="/finance" className="text-xs text-purple-600 hover:text-purple-700 font-medium">Финансы →</Link>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              {
+                label: 'Выручка',
+                value: `${fmt(financeToday.today.revenue)} ₽`,
+                prev: financeToday.yesterday.revenue,
+                delta: financeToday.delta_pct,
+              },
+              {
+                label: 'Выплата',
+                value: `${fmt(financeToday.today.payout)} ₽`,
+                prev: financeToday.yesterday.payout,
+                delta: financeToday.yesterday.payout > 0
+                  ? Math.round(((financeToday.today.payout - financeToday.yesterday.payout) / financeToday.yesterday.payout) * 1000) / 10
+                  : null,
+              },
+              {
+                label: 'Продаж (шт)',
+                value: String(financeToday.today.quantity),
+                prev: financeToday.yesterday.quantity,
+                delta: financeToday.yesterday.quantity > 0
+                  ? Math.round(((financeToday.today.quantity - financeToday.yesterday.quantity) / financeToday.yesterday.quantity) * 1000) / 10
+                  : null,
+              },
+            ].map(({ label, value, prev, delta }) => (
+              <div key={label} className="text-center">
+                <p className="text-xs text-slate-400 mb-1">{label}</p>
+                <p className="text-lg font-bold text-slate-900">{value}</p>
+                {delta != null ? (
+                  <p className={`text-xs font-medium mt-0.5 ${delta >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                    {delta >= 0 ? '▲' : '▼'} {Math.abs(delta)}% к вчера
+                  </p>
+                ) : prev === 0 ? (
+                  <p className="text-xs text-slate-400 mt-0.5">нет данных за вчера</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+          {financeToday.week.revenue > 0 && (
+            <div className="mt-4 pt-4 border-t border-slate-100 flex gap-6 text-sm text-slate-500">
+              <span>Выручка за 7 дн.: <strong className="text-slate-700">{fmt(financeToday.week.revenue)} ₽</strong></span>
+              <span>Выплата за 7 дн.: <strong className="text-slate-700">{fmt(financeToday.week.payout)} ₽</strong></span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Goal pace warning ─────────────────────────────────────────── */}
+      {goalProgress && goalProgress.goal && goalProgress.days_elapsed > 0 && (() => {
+        const elapsedPct = goalProgress.days_elapsed / goalProgress.days_in_month;
+        const revGoal = goalProgress.goal.revenue_goal;
+        const revActual = goalProgress.actual.revenue;
+        const revPct = revGoal && revGoal > 0 ? revActual / revGoal : null;
+        if (revPct == null || elapsedPct < 0.6 || revPct >= 0.7) return null;
+        const projectedRev = Math.round((revActual / goalProgress.days_elapsed) * goalProgress.days_in_month);
+        return (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+            <span className="text-amber-500 text-xl flex-shrink-0">⚠️</span>
+            <div className="min-w-0">
+              <p className="font-semibold text-amber-800">Цель месяца под угрозой</p>
+              <p className="text-sm text-amber-700 mt-0.5">
+                Выручка {Math.round(revPct * 100)}% от цели при {Math.round(elapsedPct * 100)}% прошедшего месяца.
+                По текущему темпу: {projectedRev.toLocaleString('ru-RU')} ₽
+              </p>
+              <Link href="/pnl?tab=goals" className="text-xs font-medium text-amber-700 hover:text-amber-900 mt-1 inline-block">
+                Открыть цели →
+              </Link>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Smart Recommendations ─────────────────────────────────────── */}
+      {recommendations.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-slate-800">Приоритеты сегодня</h2>
+            <span className="text-xs text-slate-400">{recommendations.length} задачи</span>
+          </div>
+          <div className="space-y-2">
+            {recommendations.map((rec, i) => {
+              const priorityStyles = {
+                high:   { dot: 'bg-red-500',   badge: 'bg-red-50 text-red-700 border-red-200',   row: 'hover:bg-red-50/30' },
+                medium: { dot: 'bg-amber-400', badge: 'bg-amber-50 text-amber-700 border-amber-200', row: 'hover:bg-amber-50/30' },
+                low:    { dot: 'bg-slate-300', badge: 'bg-slate-50 text-slate-500 border-slate-200', row: 'hover:bg-slate-50' },
+              }[rec.priority];
+              return (
+                <Link
+                  key={i}
+                  href={rec.href}
+                  className={`flex items-start gap-3 p-3 rounded-xl border border-transparent transition-colors ${priorityStyles.row}`}
+                >
+                  <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${priorityStyles.dot}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium text-slate-800">{rec.title}</p>
+                      <span className={`text-xs px-1.5 py-0.5 rounded border ${priorityStyles.badge}`}>
+                        {rec.category}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{rec.description}</p>
+                  </div>
+                  {rec.value && (
+                    <span className="text-sm font-bold text-slate-600 flex-shrink-0">{rec.value}</span>
+                  )}
+                  <svg className="w-4 h-4 text-slate-300 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* KPI strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
@@ -256,6 +502,121 @@ export default function DashboardPage() {
           </Link>
         </div>
       </div>
+
+      {/* ── Latest AI Report ─────────────────────────────────────────── */}
+      {latestReport && (
+        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3 flex-1 min-w-0">
+              <div className="w-9 h-9 bg-purple-100 rounded-xl flex items-center justify-center text-lg flex-shrink-0">📊</div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-semibold text-slate-900">{latestReport.headline ?? 'Еженедельный отчёт'}</p>
+                  <span className="text-xs text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full flex-shrink-0">{latestReport.period_start} — {latestReport.period_end}</span>
+                </div>
+                <p className="text-sm text-slate-600 mt-0.5 line-clamp-2">{latestReport.summary}</p>
+                {latestReport.insights.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {latestReport.insights.slice(0, 3).map((ins, i) => (
+                      <span key={i} className={`text-xs px-2 py-0.5 rounded-full border ${ins.type === 'success' ? 'bg-green-50 border-green-200 text-green-700' : ins.type === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-700' : ins.type === 'action' ? 'bg-purple-50 border-purple-200 text-purple-700' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                        {ins.title}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <Link href="/reports" className="text-xs text-purple-600 hover:text-purple-800 font-medium flex-shrink-0 mt-1">
+              Все отчёты →
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* ── Run quota ───────────────────────────────────────────────────── */}
+      {quota && !quota.unlimited && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-sm font-medium text-slate-700">AI-запуски в этом месяце</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {quota.used} из {quota.max} использовано
+              </p>
+            </div>
+            {quota.used >= quota.max && (
+              <Link href="/pricing" className="text-xs bg-amber-100 text-amber-700 border border-amber-200 px-3 py-1 rounded-full font-medium hover:bg-amber-200 transition-colors">
+                Обновить тариф
+              </Link>
+            )}
+          </div>
+          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all ${quota.used / quota.max >= 0.9 ? 'bg-red-500' : quota.used / quota.max >= 0.7 ? 'bg-amber-500' : 'bg-purple-600'}`}
+              style={{ width: `${Math.min(100, Math.round((quota.used / quota.max) * 100))}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-xs text-slate-400 mt-1.5">
+            <span>{Math.round((quota.used / quota.max) * 100)}% использовано</span>
+            <span>{quota.max - quota.used} осталось</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Operational status ───────────────────────────────────────── */}
+      {hasConnections && (alertUnread > 0 || criticalSupplyCount > 0 || (reviewStats && reviewStats.unanswered > 0)) && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Alerts */}
+          <Link href="/alerts"
+            className={`flex items-center gap-3 p-4 rounded-xl border transition-colors ${alertUnread > 0 ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-base flex-shrink-0 ${alertUnread > 0 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
+              🔔
+            </div>
+            <div className="min-w-0">
+              <p className={`text-xs font-medium mb-0.5 ${alertUnread > 0 ? 'text-red-600' : 'text-slate-500'}`}>Уведомления</p>
+              <p className={`text-lg font-bold leading-none ${alertUnread > 0 ? 'text-red-700' : 'text-slate-400'}`}>
+                {alertUnread > 0 ? `${alertUnread} новых` : '0 новых'}
+              </p>
+            </div>
+            <svg className={`w-4 h-4 ml-auto flex-shrink-0 ${alertUnread > 0 ? 'text-red-400' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+
+          {/* Supply */}
+          <Link href="/supply"
+            className={`flex items-center gap-3 p-4 rounded-xl border transition-colors ${criticalSupplyCount > 0 ? 'bg-orange-50 border-orange-200 hover:bg-orange-100' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-base flex-shrink-0 ${criticalSupplyCount > 0 ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'}`}>
+              📦
+            </div>
+            <div className="min-w-0">
+              <p className={`text-xs font-medium mb-0.5 ${criticalSupplyCount > 0 ? 'text-orange-600' : 'text-slate-500'}`}>Поставки</p>
+              <p className={`text-lg font-bold leading-none ${criticalSupplyCount > 0 ? 'text-orange-700' : 'text-slate-400'}`}>
+                {criticalSupplyCount > 0 ? `${criticalSupplyCount} критичных` : 'Всё в порядке'}
+              </p>
+            </div>
+            <svg className={`w-4 h-4 ml-auto flex-shrink-0 ${criticalSupplyCount > 0 ? 'text-orange-400' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+
+          {/* Reviews */}
+          <Link href="/reviews"
+            className={`flex items-center gap-3 p-4 rounded-xl border transition-colors ${reviewStats && reviewStats.unanswered > 0 ? 'bg-amber-50 border-amber-200 hover:bg-amber-100' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-base flex-shrink-0 ${reviewStats && reviewStats.unanswered > 0 ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
+              ⭐
+            </div>
+            <div className="min-w-0">
+              <p className={`text-xs font-medium mb-0.5 ${reviewStats && reviewStats.unanswered > 0 ? 'text-amber-600' : 'text-slate-500'}`}>Отзывы</p>
+              <p className={`text-lg font-bold leading-none ${reviewStats && reviewStats.unanswered > 0 ? 'text-amber-700' : 'text-slate-400'}`}>
+                {reviewStats && reviewStats.unanswered > 0 ? `${reviewStats.unanswered} без ответа` : 'Все отвечены'}
+              </p>
+            </div>
+            <svg className={`w-4 h-4 ml-auto flex-shrink-0 ${reviewStats && reviewStats.unanswered > 0 ? 'text-amber-400' : 'text-slate-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+        </div>
+      )}
 
       {/* ── Warehouse + Finance widgets ────────────────────────────────── */}
       {hasConnections && (

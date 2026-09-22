@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../auth/auth.middleware';
 import { createRun, getUserRuns, getRunById } from './runs.service';
+import { getSubscription, PLAN_LIMITS, type Plan } from '../subscriptions/subscriptions.service';
+import { db } from '../../db';
 
 export const runsRouter = Router();
 runsRouter.use(authenticate);
@@ -41,6 +43,23 @@ runsRouter.get('/', async (req: Request, res: Response) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/runs/quota — monthly usage vs plan limit
+runsRouter.get('/quota', async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const sub = await getSubscription(userId);
+    const limits = PLAN_LIMITS[sub.plan as Plan] ?? PLAN_LIMITS.free;
+    const { rows } = await db.query(
+      `SELECT COUNT(*)::int AS cnt FROM scenario_runs
+       WHERE user_id = $1 AND created_at >= date_trunc('month', now())`,
+      [userId],
+    );
+    const used = rows[0]?.cnt ?? 0;
+    const max = limits.runsPerMonth;
+    res.json({ used, max, plan: sub.plan, unlimited: max >= 9999 });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
 runsRouter.get('/:id', async (req: Request, res: Response) => {

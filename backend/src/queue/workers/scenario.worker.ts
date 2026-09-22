@@ -4,6 +4,7 @@ import { ScenarioJobData } from '../queue';
 import { getExecutor } from '../../scenarios/registry';
 import { getConnectionById } from '../../modules/connections/connections.service';
 import { createAdapter } from '../../integrations/marketplace/factory';
+import { dispatchWebhookEvent } from '../../modules/webhooks/webhooks.service';
 
 export async function processScenarioJob(job: Job<ScenarioJobData>): Promise<void> {
   const { runId, userId, scenarioSlug, connectionId, inputData } = job.data;
@@ -67,6 +68,15 @@ export async function processScenarioJob(job: Job<ScenarioJobData>): Promise<voi
       await db.query('ROLLBACK');
       throw err;
     }
+
+    // Dispatch webhook (non-blocking)
+    dispatchWebhookEvent(userId, 'run.completed', {
+      run_id: runId,
+      scenario: scenarioSlug,
+      cost,
+      status: 'completed',
+    }).catch(() => {});
+
   } catch (err: any) {
     await db.query(
       `UPDATE scenario_runs
@@ -74,6 +84,13 @@ export async function processScenarioJob(job: Job<ScenarioJobData>): Promise<voi
        WHERE id = $2`,
       [err.message, runId]
     );
+
+    dispatchWebhookEvent(userId, 'run.failed', {
+      run_id: runId,
+      scenario: scenarioSlug,
+      error: err.message,
+    }).catch(() => {});
+
     throw err;
   }
 }

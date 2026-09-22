@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { apiRequest as apiFetch } from '@/lib/api';
+import { apiRequest as apiFetch, importPurchasePriceCsv, getWarehouseCsvExportUrl, getWarehouseAiAnalysis, WarehouseAiAnalysis, WarehouseAiStockAdvice } from '@/lib/api';
 
 interface StockRow {
   sku: string;
@@ -30,6 +30,89 @@ const WH_COLORS: Record<string, string> = {
   fbs: 'bg-orange-100 text-orange-700',
 };
 
+function AdviceList({ items, color }: { items: WarehouseAiStockAdvice[]; color: string }) {
+  if (!items.length) return null;
+  return (
+    <div className="space-y-2">
+      {items.map((a, i) => (
+        <div key={i} className={`rounded-lg border p-3 ${color}`}>
+          <p className="text-xs font-semibold text-slate-700 truncate">{a.title || a.sku}</p>
+          <p className="text-xs text-slate-500 mt-0.5">{a.issue}</p>
+          <p className="text-xs font-medium text-slate-800 mt-1">→ {a.action}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function WarehouseAiPanel({ result, onClose }: { result: WarehouseAiAnalysis; onClose: () => void }) {
+  return (
+    <div className="bg-white rounded-xl border border-violet-200 p-5 space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🤖</span>
+          <h3 className="font-semibold text-slate-800">AI анализ склада</h3>
+        </div>
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-sm">✕</button>
+      </div>
+
+      <p className="text-sm text-slate-600">{result.summary}</p>
+
+      {/* Stat strip */}
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          { label: 'SKU', value: result.total_skus },
+          { label: 'Нулевые', value: result.zero_stock_count, red: result.zero_stock_count > 0 },
+          { label: 'Избыток', value: result.overstock_count, amber: result.overstock_count > 0 },
+          { label: 'Дефицит', value: result.understock_count, red: result.understock_count > 0 },
+        ].map(({ label, value, red, amber }) => (
+          <div key={label} className="bg-slate-50 rounded-lg p-3 text-center">
+            <p className={`text-xl font-bold ${red ? 'text-red-600' : amber ? 'text-amber-600' : 'text-slate-800'}`}>{value}</p>
+            <p className="text-xs text-slate-500 mt-0.5">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        {result.overstock_advice.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-amber-700 mb-2 uppercase tracking-wide">Избыточные остатки</p>
+            <AdviceList items={result.overstock_advice} color="bg-amber-50 border-amber-100" />
+          </div>
+        )}
+        {result.understock_advice.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-red-700 mb-2 uppercase tracking-wide">Дефицит</p>
+            <AdviceList items={result.understock_advice} color="bg-red-50 border-red-100" />
+          </div>
+        )}
+        {result.imbalance_advice.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-blue-700 mb-2 uppercase tracking-wide">Дисбаланс FBO/FBS</p>
+            <AdviceList items={result.imbalance_advice} color="bg-blue-50 border-blue-100" />
+          </div>
+        )}
+      </div>
+
+      {result.actions.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Рекомендации</p>
+          <ol className="space-y-1">
+            {result.actions.map((a, i) => (
+              <li key={i} className="flex gap-2 text-sm text-slate-700">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs flex items-center justify-center font-semibold">{i + 1}</span>
+                {a}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      <p className="text-xs text-slate-400">Сформировано: {new Date(result.generated_at).toLocaleString('ru-RU')}</p>
+    </div>
+  );
+}
+
 export default function WarehousePage() {
   const [stocks, setStocks] = useState<StockRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,6 +123,11 @@ export default function WarehousePage() {
   const [editPrice, setEditPrice] = useState('');
   const [savingPrice, setSavingPrice] = useState(false);
   const [noAccess, setNoAccess] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ updated: number; errors: string[] } | null>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const [aiResult, setAiResult] = useState<WarehouseAiAnalysis | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -65,6 +153,36 @@ export default function WarehousePage() {
       setError(e.message ?? 'Ошибка синхронизации');
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function handleCsvImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const result = await importPurchasePriceCsv(file);
+      setImportResult(result);
+      await load();
+    } catch (err: any) {
+      setError(err.message ?? 'Ошибка импорта');
+    } finally {
+      setImporting(false);
+      if (csvInputRef.current) csvInputRef.current.value = '';
+    }
+  }
+
+  async function handleAiAnalysis() {
+    setAiLoading(true);
+    setAiResult(null);
+    try {
+      const result = await getWarehouseAiAnalysis();
+      setAiResult(result);
+    } catch (e: any) {
+      setError(e.message ?? 'Ошибка AI анализа');
+    } finally {
+      setAiLoading(false);
     }
   }
 
@@ -119,20 +237,82 @@ export default function WarehousePage() {
           <h1 className="text-2xl font-bold text-slate-900">Склад</h1>
           <p className="text-slate-500 text-sm mt-0.5">Остатки по всем складам и маркетплейсам</p>
         </div>
-        <button
-          onClick={handleSync}
-          disabled={syncing}
-          className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          <svg className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          {syncing ? 'Синхронизация...' : 'Обновить остатки'}
-        </button>
+        <div className="flex items-center gap-2">
+          {/* CSV import */}
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={handleCsvImport}
+          />
+          <button
+            onClick={() => csvInputRef.current?.click()}
+            disabled={importing}
+            title="Загрузить CSV с себестоимостью"
+            className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-50 text-slate-700 text-sm font-medium rounded-lg transition-colors"
+          >
+            <svg className={`w-4 h-4 ${importing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            {importing ? 'Импорт...' : 'Импорт CSV'}
+          </button>
+          <a
+            href={getWarehouseCsvExportUrl()}
+            download="purchase_prices.csv"
+            className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition-colors"
+            title="Скачать шаблон CSV"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Шаблон
+          </a>
+          <button
+            onClick={handleAiAnalysis}
+            disabled={aiLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            {aiLoading ? (
+              <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            ) : <span>🤖</span>}
+            {aiLoading ? 'Анализ...' : 'AI анализ'}
+          </button>
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <svg className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {syncing ? 'Синхронизация...' : 'Обновить остатки'}
+          </button>
+        </div>
       </div>
 
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>
+      )}
+
+      {importResult && (
+        <div className={`p-3 rounded-lg text-sm border ${importResult.errors.length ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-green-50 border-green-200 text-green-800'}`}>
+          <div className="flex items-center justify-between">
+            <span>
+              Обновлено: <strong>{importResult.updated}</strong> товаров
+              {importResult.errors.length > 0 && `, пропущено: ${importResult.errors.length}`}
+            </span>
+            <button onClick={() => setImportResult(null)} className="text-xs opacity-60 hover:opacity-100">✕</button>
+          </div>
+          {importResult.errors.length > 0 && (
+            <ul className="mt-1 space-y-0.5 text-xs opacity-70">
+              {importResult.errors.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
+              {importResult.errors.length > 5 && <li>...и ещё {importResult.errors.length - 5}</li>}
+            </ul>
+          )}
+        </div>
       )}
 
       {/* Stats */}
@@ -148,6 +328,10 @@ export default function WarehousePage() {
           </div>
         ))}
       </div>
+
+      {aiResult && (
+        <WarehouseAiPanel result={aiResult} onClose={() => setAiResult(null)} />
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">

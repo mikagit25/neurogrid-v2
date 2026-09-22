@@ -18,7 +18,18 @@ export interface DigestData {
   byPlatform: { platform: string; revenue: number; netPayout: number }[];
   stockAlerts: { title: string; platform: string; qty: number }[];
   unread: number;
+  unansweredReviews: number;
+  positionDrops: number;
   appUrl: string;
+}
+
+export async function sendMail({ to, subject, html }: { to: string; subject: string; html: string }) {
+  const transport = createTransport();
+  if (!transport) {
+    console.log(`[mailer] ${subject} → ${to}`);
+    return;
+  }
+  await transport.sendMail({ from: config.smtp.from, to, subject, html });
 }
 
 export async function sendPasswordResetEmail(to: string, resetUrl: string) {
@@ -150,6 +161,30 @@ export async function sendDailyDigest(to: string, d: DigestData) {
     ${alertRows}
   </div>
 
+  <!-- Extra signals -->
+  ${d.unansweredReviews > 0 || d.positionDrops > 0 ? `
+  <div style="padding:0 32px 16px">
+    <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">Требуют внимания</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${d.unansweredReviews > 0 ? `
+      <a href="${d.appUrl}/reviews" style="text-decoration:none;display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;flex:1;min-width:160px">
+        <span style="font-size:18px">⭐</span>
+        <div>
+          <div style="font-size:12px;color:#92400e;font-weight:600">${d.unansweredReviews} отзывов без ответа</div>
+          <div style="font-size:11px;color:#b45309">Нажмите, чтобы ответить</div>
+        </div>
+      </a>` : ''}
+      ${d.positionDrops > 0 ? `
+      <a href="${d.appUrl}/seo" style="text-decoration:none;display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;flex:1;min-width:160px">
+        <span style="font-size:18px">📉</span>
+        <div>
+          <div style="font-size:12px;color:#991b1b;font-weight:600">${d.positionDrops} позиций упало</div>
+          <div style="font-size:11px;color:#b91c1c">За последние 7 дней</div>
+        </div>
+      </a>` : ''}
+    </div>
+  </div>` : ''}
+
   <!-- CTA -->
   <div style="padding:0 32px 28px;text-align:center">
     ${d.unread > 0 ? `<div style="margin-bottom:16px;font-size:13px;color:#64748b">${d.unread} непрочитанных уведомлений в системе</div>` : ''}
@@ -179,6 +214,142 @@ export async function sendDailyDigest(to: string, d: DigestData) {
     from: `"NeuroGrid" <${config.smtp.from}>`,
     to,
     subject: `NeuroGrid дайджест · ${today}`,
+    html,
+  });
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  analyst: 'Аналитик (только просмотр)',
+  manager: 'Менеджер (просмотр + управление)',
+  admin: 'Администратор (полный доступ)',
+};
+
+export async function sendTeamInvitationEmail(
+  to: string,
+  ownerEmail: string,
+  inviteUrl: string,
+  role: string,
+) {
+  const roleLabel = ROLE_LABELS[role] ?? role;
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+<div style="max-width:480px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)">
+  <div style="background:linear-gradient(135deg,#7c3aed,#4f46e5);padding:28px 32px">
+    <div style="font-size:20px;font-weight:800;color:#fff">NeuroGrid</div>
+    <div style="font-size:13px;color:#c4b5fd;margin-top:4px">Приглашение в команду</div>
+  </div>
+  <div style="padding:28px 32px">
+    <p style="margin:0 0 16px;color:#1e293b;font-size:15px">
+      <strong>${ownerEmail}</strong> приглашает вас присоединиться к рабочему пространству NeuroGrid.
+    </p>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin-bottom:20px">
+      <p style="margin:0;font-size:12px;color:#64748b">Роль</p>
+      <p style="margin:4px 0 0;font-size:14px;font-weight:600;color:#1e293b">${roleLabel}</p>
+    </div>
+    <a href="${inviteUrl}"
+       style="display:inline-block;padding:12px 28px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px">
+      Принять приглашение →
+    </a>
+    <p style="margin:16px 0 0;font-size:11px;color:#94a3b8">
+      Ссылка действует 7 дней. Если вы получили это письмо по ошибке — просто проигнорируйте.
+    </p>
+  </div>
+</div>
+</body></html>`;
+
+  const transport = createTransport();
+  if (!transport) {
+    console.log(`[mailer] team invite to ${to}: ${inviteUrl}`);
+    return;
+  }
+  await transport.sendMail({
+    from: `"NeuroGrid" <${config.smtp.from}>`,
+    to,
+    subject: `${ownerEmail} приглашает вас в NeuroGrid`,
+    html,
+  });
+}
+
+const ALERT_TYPE_LABELS: Record<string, string> = {
+  low_stock:      'Мало товара на складе',
+  price_drop:     'Падение цены',
+  rating_drop:    'Падение рейтинга',
+  position_drop:  'Падение позиции',
+  revenue_drop:   'Снижение выручки',
+  competitor:     'Активность конкурента',
+  custom:         'Алерт',
+};
+
+const ALERT_ICONS: Record<string, string> = {
+  low_stock: '📦', price_drop: '💸', rating_drop: '⭐',
+  position_drop: '📉', revenue_drop: '💰', competitor: '🔍', custom: '🔔',
+};
+
+export async function sendAlertEmail(
+  to: string,
+  alertType: string,
+  message: string,
+  meta: { sku?: string | null; platform?: string | null; value?: number | null; threshold?: number | null },
+  appUrl: string,
+) {
+  const label = ALERT_TYPE_LABELS[alertType] ?? 'Алерт';
+  const icon  = ALERT_ICONS[alertType] ?? '🔔';
+  const PLATFORM_NAMES: Record<string, string> = { wb: 'WildBerries', ozon: 'Ozon', ym: 'Яндекс Маркет', mm: 'Мегамаркет' };
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+<div style="max-width:480px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)">
+  <div style="background:linear-gradient(135deg,#f59e0b,#d97706);padding:24px 28px">
+    <div style="font-size:11px;font-weight:700;color:#fff3;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">NeuroGrid Алерт</div>
+    <div style="font-size:20px;font-weight:800;color:#fff">${icon} ${label}</div>
+  </div>
+  <div style="padding:24px 28px">
+    <p style="font-size:15px;color:#1e293b;margin:0 0 16px;line-height:1.5">${message}</p>
+    ${meta.sku ? `
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:16px;display:flex;gap:12px">
+      <div style="flex:1">
+        <div style="font-size:11px;color:#64748b;margin-bottom:3px">SKU</div>
+        <div style="font-size:13px;font-weight:600;color:#1e293b">${meta.sku}</div>
+      </div>
+      ${meta.platform ? `
+      <div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:3px">Площадка</div>
+        <div style="font-size:13px;font-weight:600;color:#1e293b">${PLATFORM_NAMES[meta.platform] ?? meta.platform}</div>
+      </div>` : ''}
+      ${meta.value !== null && meta.value !== undefined ? `
+      <div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:3px">Значение</div>
+        <div style="font-size:13px;font-weight:600;color:#d97706">${meta.value}</div>
+      </div>` : ''}
+      ${meta.threshold !== null && meta.threshold !== undefined ? `
+      <div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:3px">Порог</div>
+        <div style="font-size:13px;font-weight:600;color:#64748b">${meta.threshold}</div>
+      </div>` : ''}
+    </div>` : ''}
+    <a href="${appUrl}/alerts"
+       style="display:inline-block;padding:12px 24px;background:#f59e0b;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px">
+      Посмотреть в NeuroGrid →
+    </a>
+    <p style="margin:16px 0 0;font-size:11px;color:#94a3b8">
+      Чтобы отключить email-алерты, перейдите в
+      <a href="${appUrl}/notifications" style="color:#7c3aed;text-decoration:none">настройки уведомлений</a>.
+    </p>
+  </div>
+</div>
+</body></html>`;
+
+  const transport = createTransport();
+  if (!transport) {
+    console.log(`[mailer] alert email to ${to}: ${alertType} — ${message}`);
+    return;
+  }
+  await transport.sendMail({
+    from: `"NeuroGrid" <${config.smtp.from}>`,
+    to,
+    subject: `${icon} NeuroGrid: ${label}`,
     html,
   });
 }

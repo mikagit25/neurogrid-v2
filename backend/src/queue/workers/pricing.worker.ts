@@ -19,6 +19,7 @@ function computePrice(
   currentPrice: number,
   costPrice: number | null,
   isWeekend: boolean,
+  competitorPrice?: number | null,
 ): number | null {
   const min = config.minPrice ? Number(config.minPrice) : 0;
   const max = config.maxPrice ? Number(config.maxPrice) : Infinity;
@@ -41,6 +42,16 @@ function computePrice(
     case 'dynamic': {
       const mult = isWeekend ? Number(config.weekendMultiplier ?? 1.1) : 1;
       return currentPrice > 0 ? clamp(currentPrice * mult) : null;
+    }
+    case 'competitor_based': {
+      if (!competitorPrice) return null;
+      const mode = config.competitorMode ?? 'match'; // match | undercut | above
+      const pct = Number(config.competitorPct ?? 0) / 100;
+      let target: number;
+      if (mode === 'undercut') target = competitorPrice * (1 - pct);
+      else if (mode === 'above') target = competitorPrice * (1 + pct);
+      else target = competitorPrice; // match
+      return clamp(target);
     }
     default:
       return null;
@@ -65,6 +76,19 @@ async function _applyRule(rule: RuleRow): Promise<{ applied: number; skipped: nu
   const products = await adapter.getProducts(200);
   const targets = rule.sku ? products.filter((p) => p.sku === rule.sku) : products;
 
+  // Pre-load competitor price map for competitor_based strategy
+  let competitorPriceMap: Record<string, number> = {};
+  if (rule.strategy === 'competitor_based') {
+    const { rows: compRows } = await db.query<{ my_sku: string; price: number }>(
+      `SELECT DISTINCT ON (my_sku) my_sku, price
+       FROM competitor_prices
+       WHERE user_id = $1 AND platform = $2
+       ORDER BY my_sku, checked_at DESC`,
+      [rule.user_id, rule.platform],
+    );
+    for (const r of compRows) competitorPriceMap[r.my_sku] = Number(r.price);
+  }
+
   const isWeekend = [0, 6].includes(new Date().getDay());
   let applied = 0;
   let skipped = 0;
@@ -77,8 +101,9 @@ async function _applyRule(rule: RuleRow): Promise<{ applied: number; skipped: nu
         [rule.user_id, rule.platform, p.sku],
       );
       const costPrice = catalogRows[0]?.purchase_price ? Number(catalogRows[0].purchase_price) : null;
+      const competitorPrice = competitorPriceMap[p.sku] ?? null;
 
-      const newPrice = computePrice(rule.strategy, rule.config, p.price, costPrice, isWeekend);
+      const newPrice = computePrice(rule.strategy, rule.config, p.price, costPrice, isWeekend, competitorPrice);
       if (newPrice === null || newPrice === p.price) { skipped++; continue; }
 
       await adapter.updatePrice(p.sku, newPrice);

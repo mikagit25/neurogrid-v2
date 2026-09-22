@@ -7,6 +7,7 @@ import {
   shipOzonOrder, getOzonLabel,
   getYmLabel, confirmYmOrder,
   getMmLabel, confirmMmOrder,
+  getOrdersAiAdvisor, OrdersAiAdvisor, OrdersAiTip,
 } from '@/lib/api';
 import type { MarketplaceOrder, Connection } from '@/lib/api';
 
@@ -349,6 +350,98 @@ function MmOrderRow({ order, onRefresh }: { order: MarketplaceOrder; onRefresh: 
   );
 }
 
+const TIP_COLORS: Record<string, string> = {
+  high:   'border-red-200 bg-red-50',
+  medium: 'border-amber-200 bg-amber-50',
+  low:    'border-blue-200 bg-blue-50',
+};
+const TIP_DOT: Record<string, string> = {
+  high: 'bg-red-500', medium: 'bg-amber-500', low: 'bg-blue-400',
+};
+
+function OrdersAiPanel({ result, onClose }: { result: OrdersAiAdvisor; onClose: () => void }) {
+  return (
+    <div className="bg-white rounded-2xl border border-violet-200 p-5 space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🤖</span>
+          <h3 className="font-semibold text-slate-800">AI советник по выполнению заказов</h3>
+        </div>
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-sm">✕</button>
+      </div>
+
+      <p className="text-sm text-slate-600">{result.summary}</p>
+
+      {/* Stats strip */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: 'Всего заказов', value: result.total_orders },
+          { label: 'Ожидают', value: result.pending_count, amber: result.pending_count > 0 },
+          { label: 'Срочно', value: result.urgent_count, red: result.urgent_count > 0 },
+        ].map(({ label, value, red, amber }) => (
+          <div key={label} className="bg-slate-50 rounded-lg p-3 text-center">
+            <p className={`text-xl font-bold ${red ? 'text-red-600' : amber ? 'text-amber-600' : 'text-slate-800'}`}>{value}</p>
+            <p className="text-xs text-slate-500 mt-0.5">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      {result.bottlenecks.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Узкие места</p>
+          <ul className="space-y-1">
+            {result.bottlenecks.map((b, i) => (
+              <li key={i} className="flex gap-2 text-sm text-red-700">
+                <span className="text-red-400 flex-shrink-0">●</span>{b}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {result.tips.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Советы</p>
+          <div className="space-y-2">
+            {result.tips.map((t, i) => (
+              <div key={i} className={`rounded-lg border p-3 ${TIP_COLORS[t.priority] ?? 'border-slate-200 bg-slate-50'}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${TIP_DOT[t.priority] ?? 'bg-slate-400'}`} />
+                  <p className="text-sm font-medium text-slate-800">{t.title}</p>
+                </div>
+                <p className="text-xs text-slate-600 pl-4">{t.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {result.batch_advice && (
+        <div className="bg-violet-50 border border-violet-200 rounded-lg p-3">
+          <p className="text-xs font-semibold text-violet-700 mb-1">Совет по группировке</p>
+          <p className="text-sm text-slate-700">{result.batch_advice}</p>
+        </div>
+      )}
+
+      {result.actions.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Действия</p>
+          <ol className="space-y-1">
+            {result.actions.map((a, i) => (
+              <li key={i} className="flex gap-2 text-sm text-slate-700">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs flex items-center justify-center font-semibold">{i + 1}</span>
+                {a}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      <p className="text-xs text-slate-400">Сформировано: {new Date(result.generated_at).toLocaleString('ru-RU')}</p>
+    </div>
+  );
+}
+
 // ---- Main page ----
 export default function OrdersPage() {
   const [orders, setOrders] = useState<MarketplaceOrder[]>([]);
@@ -361,6 +454,8 @@ export default function OrdersPage() {
   // WB multi-select state
   const [selectedWb, setSelectedWb] = useState<Set<string>>(new Set());
   const [showWbPanel, setShowWbPanel] = useState(false);
+  const [aiAdvisor, setAiAdvisor] = useState<OrdersAiAdvisor | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -398,6 +493,19 @@ export default function OrdersPage() {
 
   const selectedWbOrders = wbOrders.filter((o) => selectedWb.has(o.id));
   const wbConnectionId = selectedWbOrders[0]?.connectionId ?? wbOrders[0]?.connectionId ?? '';
+
+  async function handleAiAdvisor() {
+    setAiLoading(true);
+    setAiAdvisor(null);
+    try {
+      const result = await getOrdersAiAdvisor();
+      setAiAdvisor(result);
+    } catch (e: any) {
+      setError(e.message ?? 'Ошибка AI советника');
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   if (loading) return (
     <div className="flex justify-center items-center h-64">
@@ -442,15 +550,42 @@ export default function OrdersPage() {
               </button>
             ))}
           </div>
+          <button
+            onClick={handleAiAdvisor}
+            disabled={aiLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition-colors"
+          >
+            {aiLoading ? (
+              <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            ) : <span>🤖</span>}
+            {aiLoading ? 'Анализ...' : 'AI советник'}
+          </button>
           <button onClick={load} className="p-2 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
+          <a
+            href="/api/orders/export"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-sm rounded-xl transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            CSV
+          </a>
         </div>
       </div>
 
       {error && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">{error}</div>}
+
+      {aiAdvisor && (
+        <OrdersAiPanel result={aiAdvisor} onClose={() => setAiAdvisor(null)} />
+      )}
 
       {orders.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center">

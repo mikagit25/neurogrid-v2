@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { getNotifications, markNotificationRead, getDigestSettings, updateDigestSettings } from '@/lib/api';
+import { getNotifications, markNotificationRead, getDigestSettings, updateDigestSettings, getAlertEmailSettings, updateAlertEmailSettings } from '@/lib/api';
 import type { Notification } from '@/lib/api';
 
 const TYPE_META: Record<string, { icon: string; color: string; label: string }> = {
@@ -35,15 +35,19 @@ export default function NotificationsPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [digestEnabled, setDigestEnabled] = useState(true);
   const [digestSaving, setDigestSaving] = useState(false);
+  const [alertEmailEnabled, setAlertEmailEnabled] = useState(true);
+  const [alertEmailSaving, setAlertEmailSaving] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [data, digestSettings] = await Promise.all([
+      const [data, digestSettings, alertEmailSettings] = await Promise.all([
         getNotifications(),
         getDigestSettings(),
+        getAlertEmailSettings(),
       ]);
       setNotifications(data);
       setDigestEnabled(digestSettings.digestEnabled);
+      setAlertEmailEnabled(alertEmailSettings.alertEmailEnabled);
     } catch {
       // ignore
     } finally {
@@ -186,6 +190,46 @@ export default function NotificationsPage() {
         {digestEnabled && (
           <p className="text-xs text-slate-400 mt-3 ml-13">
             Дайджест отправляется на email вашего аккаунта каждое утро в 08:00
+          </p>
+        )}
+      </div>
+
+      {/* Alert email settings card */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
+              <span className="text-lg">🔔</span>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-800">Email при срабатывании алертов</p>
+              <p className="text-sm text-slate-500 mt-0.5">
+                Моментальное письмо когда срабатывает алерт: мало стока, падение цены, позиции и т.д.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={async () => {
+              setAlertEmailSaving(true);
+              try {
+                await updateAlertEmailSettings(!alertEmailEnabled);
+                setAlertEmailEnabled(e => !e);
+              } catch { /* ignore */ }
+              finally { setAlertEmailSaving(false); }
+            }}
+            disabled={alertEmailSaving}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${
+              alertEmailEnabled ? 'bg-amber-500' : 'bg-slate-200'
+            }`}
+          >
+            <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ${
+              alertEmailEnabled ? 'translate-x-5' : 'translate-x-0'
+            }`} />
+          </button>
+        </div>
+        {alertEmailEnabled && (
+          <p className="text-xs text-slate-400 mt-3">
+            Письмо придёт сразу при срабатывании — не дожидаясь утреннего дайджеста
           </p>
         )}
       </div>

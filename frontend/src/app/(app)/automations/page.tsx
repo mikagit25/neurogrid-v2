@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   getAutomations, getConnections, upsertAutomation, updateAutomation,
   deleteAutomation, triggerAutomation,
+  getAutomationsAiHealth, AutomationsAiHealth, AutomationAiItem,
 } from '@/lib/api';
 import type { Automation, Connection } from '@/lib/api';
 
@@ -34,6 +35,113 @@ const STATUS_LABELS: Record<string, string> = {
   skipped: 'Пропущено',
 };
 
+const HEALTH_CONFIG: Record<string, { bg: string; border: string; text: string; label: string; icon: string }> = {
+  good:     { bg: 'bg-green-50',   border: 'border-green-200',   text: 'text-green-700',   label: 'Всё хорошо',    icon: '✅' },
+  warning:  { bg: 'bg-amber-50',   border: 'border-amber-200',   text: 'text-amber-700',   label: 'Требует внимания', icon: '⚠️' },
+  poor:     { bg: 'bg-red-50',     border: 'border-red-200',     text: 'text-red-700',     label: 'Проблемы',      icon: '🔴' },
+  inactive: { bg: 'bg-slate-50',   border: 'border-slate-200',   text: 'text-slate-600',   label: 'Не настроено',  icon: '💤' },
+};
+
+const AI_ITEM_STATUS_CONFIG: Record<string, { badge: string; label: string }> = {
+  ok:       { badge: 'bg-green-100 text-green-700', label: 'OK' },
+  warning:  { badge: 'bg-amber-100 text-amber-700', label: 'Внимание' },
+  error:    { badge: 'bg-red-100 text-red-700',     label: 'Ошибка' },
+  inactive: { badge: 'bg-slate-100 text-slate-500', label: 'Неактивен' },
+};
+
+function AutomationsAiPanel({ result, onClose }: { result: AutomationsAiHealth; onClose: () => void }) {
+  const hcfg = HEALTH_CONFIG[result.health] ?? HEALTH_CONFIG.inactive;
+  return (
+    <div className="bg-white rounded-2xl border border-violet-200 p-5 space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🤖</span>
+          <h3 className="font-semibold text-slate-800">AI диагностика автоматизаций</h3>
+        </div>
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-sm">✕</button>
+      </div>
+
+      {/* Health banner */}
+      <div className={`flex items-center gap-3 p-3 rounded-xl border ${hcfg.bg} ${hcfg.border}`}>
+        <span className="text-xl">{hcfg.icon}</span>
+        <div>
+          <p className={`font-semibold text-sm ${hcfg.text}`}>{hcfg.label}</p>
+          <p className="text-xs text-slate-500 mt-0.5">{result.summary}</p>
+        </div>
+      </div>
+
+      {/* Stats strip */}
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          { label: 'Включено', value: result.enabled_count, green: result.enabled_count > 0 },
+          { label: 'Ошибки', value: result.error_count, red: result.error_count > 0 },
+          { label: 'Не запускались', value: result.never_ran, amber: result.never_ran > 0 },
+          { label: 'Не настроено', value: result.disabled_count, amber: result.disabled_count > 0 },
+        ].map(({ label, value, red, amber, green }: any) => (
+          <div key={label} className="bg-slate-50 rounded-lg p-3 text-center">
+            <p className={`text-xl font-bold ${red ? 'text-red-600' : amber ? 'text-amber-600' : green ? 'text-green-600' : 'text-slate-800'}`}>{value}</p>
+            <p className="text-xs text-slate-500 mt-0.5">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      {result.issues.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Проблемы</p>
+          <ul className="space-y-1">
+            {result.issues.map((issue, i) => (
+              <li key={i} className="flex gap-2 text-sm text-red-700">
+                <span className="text-red-400 flex-shrink-0">●</span>{issue}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {result.per_automation.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">По каждому агенту</p>
+          <div className="space-y-2">
+            {result.per_automation.map((item, i) => {
+              const scfg = AI_ITEM_STATUS_CONFIG[item.status] ?? AI_ITEM_STATUS_CONFIG.inactive;
+              const meta = SCENARIO_META[item.slug];
+              return (
+                <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-slate-50 border border-slate-100">
+                  {meta && <span className="text-lg flex-shrink-0">{meta.icon}</span>}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium text-slate-800">{meta?.title ?? item.slug}</p>
+                      <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${scfg.badge}`}>{scfg.label}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">{item.comment}</p>
+                    <p className="text-xs text-violet-600 mt-1">→ {item.action}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {result.actions.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Рекомендации</p>
+          <ol className="space-y-1">
+            {result.actions.map((a, i) => (
+              <li key={i} className="flex gap-2 text-sm text-slate-700">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs flex items-center justify-center font-semibold">{i + 1}</span>
+                {a}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      <p className="text-xs text-slate-400">Сформировано: {new Date(result.generated_at).toLocaleString('ru-RU')}</p>
+    </div>
+  );
+}
+
 function formatDate(d: string | null) {
   if (!d) return '—';
   return new Date(d).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -46,6 +154,8 @@ export default function AutomationsPage() {
   const [running, setRunning] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [aiHealth, setAiHealth] = useState<AutomationsAiHealth | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -140,6 +250,19 @@ export default function AutomationsPage() {
     }
   }
 
+  async function handleAiHealth() {
+    setAiLoading(true);
+    setAiHealth(null);
+    try {
+      const result = await getAutomationsAiHealth();
+      setAiHealth(result);
+    } catch (e: any) {
+      setError(e.message ?? 'Ошибка AI диагностики');
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -150,10 +273,28 @@ export default function AutomationsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Автоматизации</h1>
-        <p className="text-slate-500 mt-1">Агенты работают сами — подключи магазин и включи нужные сценарии</p>
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Автоматизации</h1>
+          <p className="text-slate-500 mt-1">Агенты работают сами — подключи магазин и включи нужные сценарии</p>
+        </div>
+        <button
+          onClick={handleAiHealth}
+          disabled={aiLoading}
+          className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition-colors"
+        >
+          {aiLoading ? (
+            <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          ) : <span>🤖</span>}
+          {aiLoading ? 'Диагностика...' : 'AI диагностика'}
+        </button>
       </div>
+
+      {aiHealth && (
+        <AutomationsAiPanel result={aiHealth} onClose={() => setAiHealth(null)} />
+      )}
 
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>

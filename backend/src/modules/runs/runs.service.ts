@@ -1,6 +1,7 @@
 import { db } from '../../db';
 import { scenarioQueue } from '../../queue/queue';
 import type { ScenarioJobData } from '../../queue/queue';
+import { getSubscription, PLAN_LIMITS, type Plan } from '../subscriptions/subscriptions.service';
 
 export async function createRun(
   userId: string,
@@ -15,6 +16,25 @@ export async function createRun(
   );
   if (!scenRows.length) throw Object.assign(new Error('Scenario not found'), { status: 404 });
   const scenario = scenRows[0];
+
+  // Check monthly run quota
+  const sub = await getSubscription(userId);
+  const limits = PLAN_LIMITS[sub.plan as Plan] ?? PLAN_LIMITS.free;
+  if (limits.runsPerMonth < 9999) {
+    const { rows: quotaRows } = await db.query(
+      `SELECT COUNT(*)::int AS cnt FROM scenario_runs
+       WHERE user_id = $1
+         AND created_at >= date_trunc('month', now())`,
+      [userId],
+    );
+    const usedThisMonth = quotaRows[0]?.cnt ?? 0;
+    if (usedThisMonth >= limits.runsPerMonth) {
+      throw Object.assign(
+        new Error(`Лимит запусков на месяц исчерпан (${limits.runsPerMonth}). Обновите тариф.`),
+        { status: 429 },
+      );
+    }
+  }
 
   // Check user balance
   const { rows: userRows } = await db.query(

@@ -8,6 +8,10 @@ const sections = [
   {
     title: 'Управление',
     items: [
+      { href: '/chat',        label: 'AI-ассистент',       icon: '💬', desc: 'Чат с персональным AI' },
+      { href: '/reports',     label: 'AI-отчёты',          icon: '📊', desc: 'Еженедельный анализ бизнеса' },
+      { href: '/niche',       label: 'Анализ ниши',        icon: '🔍', desc: 'Конкуренты и потенциал рынка' },
+      { href: '/calculator',  label: 'Юнит-экономика',     icon: '🧮', desc: 'Прибыль, маржа и ROI товара' },
       { href: '/autopilot',   label: 'Автопилот',         icon: '🤖', desc: 'AI-анализ и запуск кампаний' },
       { href: '/scenarios',   label: 'Сценарии',           icon: '⚡', desc: 'Шаблоны автоматизаций' },
       { href: '/automations', label: 'Автоматизации',      icon: '🔁', desc: 'Активные правила' },

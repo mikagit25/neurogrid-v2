@@ -1,9 +1,11 @@
 import { db } from '../../db';
 import { syncWarehouseStocks } from '../../modules/warehouse/warehouse.service';
 import { syncFinanceRecords } from '../../modules/finance/finance.service';
-import { sendDailyDigest } from '../../utils/mailer';
+import { sendDailyDigest, sendMail } from '../../utils/mailer';
 import { config } from '../../config';
 import { runPricingWorker } from './pricing.worker';
+import { PLAN_PRICES, type Plan } from '../../modules/subscriptions/subscriptions.service';
+import { generateAndEmailReport } from '../../modules/reports/reports.service';
 
 const LOW_STOCK_THRESHOLD = 10;
 
@@ -115,7 +117,7 @@ export async function runDailyDigest(): Promise<void> {
 
   for (const user of users) {
     try {
-      const [revRow, platformRows, alertRows, unreadRow] = await Promise.all([
+      const [revRow, platformRows, alertRows, unreadRow, reviewRow, posDropRow] = await Promise.all([
         db.query<{ total_revenue: string; total_net_payout: string; total_qty: string }>(
           `SELECT COALESCE(SUM(revenue),0)::numeric AS total_revenue,
                   COALESCE(SUM(net_payout),0)::numeric AS total_net_payout,
@@ -147,19 +149,115 @@ export async function runDailyDigest(): Promise<void> {
           `SELECT COUNT(*)::int AS unread FROM notifications WHERE user_id = $1 AND is_read = false`,
           [user.id],
         ),
+        db.query<{ cnt: number }>(
+          `SELECT COUNT(*)::int AS cnt FROM product_reviews
+           WHERE user_id = $1 AND is_answered = false`,
+          [user.id],
+        ),
+        db.query<{ cnt: number }>(
+          // Count keywords where latest position is >5 worse than the prior check
+          `SELECT COUNT(*)::int AS cnt
+           FROM (
+             SELECT kp.keyword_id,
+               FIRST_VALUE(kp.position) OVER (PARTITION BY kp.keyword_id ORDER BY kp.checked_at DESC) AS latest,
+               NTH_VALUE(kp.position, 2) OVER (PARTITION BY kp.keyword_id ORDER BY kp.checked_at DESC
+                 ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS prev
+             FROM keyword_positions kp
+             JOIN tracked_keywords tk ON tk.id = kp.keyword_id
+             WHERE tk.user_id = $1 AND kp.checked_at >= now() - interval '7 days'
+           ) sub
+           WHERE latest IS NOT NULL AND prev IS NOT NULL AND latest > prev + 5`,
+          [user.id],
+        ),
       ]);
 
       await sendDailyDigest(user.email, {
-        revenue7d:   Number(revRow.rows[0]?.total_revenue ?? 0),
-        netPayout7d: Number(revRow.rows[0]?.total_net_payout ?? 0),
-        qty7d:       Number(revRow.rows[0]?.total_qty ?? 0),
-        byPlatform:  platformRows.rows.map((r) => ({ platform: r.platform, revenue: Number(r.revenue), netPayout: Number(r.net_payout) })),
-        stockAlerts: alertRows.rows.map((r) => ({ title: r.title || r.sku, platform: r.platform, qty: r.qty })),
-        unread:      Number(unreadRow.rows[0]?.unread ?? 0),
-        appUrl:      config.frontendUrl,
+        revenue7d:          Number(revRow.rows[0]?.total_revenue ?? 0),
+        netPayout7d:        Number(revRow.rows[0]?.total_net_payout ?? 0),
+        qty7d:              Number(revRow.rows[0]?.total_qty ?? 0),
+        byPlatform:         platformRows.rows.map((r) => ({ platform: r.platform, revenue: Number(r.revenue), netPayout: Number(r.net_payout) })),
+        stockAlerts:        alertRows.rows.map((r) => ({ title: r.title || r.sku, platform: r.platform, qty: r.qty })),
+        unread:             Number(unreadRow.rows[0]?.unread ?? 0),
+        unansweredReviews:  Number(reviewRow.rows[0]?.cnt ?? 0),
+        positionDrops:      Number(posDropRow.rows[0]?.cnt ?? 0),
+        appUrl:             config.frontendUrl,
       });
     } catch (err) {
       console.error(`[digest] error for user=${user.id}:`, err);
+    }
+  }
+}
+
+export async function runMonthlyRenewal(): Promise<void> {
+  // Renew all active paid subscriptions: deduct price from balance or downgrade to free
+  const { rows: subs } = await db.query<{ user_id: string; plan: string }>(
+    `SELECT s.user_id, s.plan FROM subscriptions s
+     WHERE s.plan IN ('start', 'business')
+       AND s.expires_at IS NOT NULL
+       AND s.expires_at <= now() + interval '2 days'`,
+  );
+  console.log(`[renewal] processing ${subs.length} subscriptions`);
+
+  for (const sub of subs) {
+    const price = PLAN_PRICES[sub.plan as Plan] ?? 0;
+    if (price === 0) continue;
+
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: userRows } = await client.query(
+        'SELECT balance, email FROM users WHERE id = $1 FOR UPDATE',
+        [sub.user_id],
+      );
+      const balance = parseFloat(userRows[0]?.balance ?? '0');
+      const email: string = userRows[0]?.email ?? '';
+
+      if (balance >= price) {
+        // Renew: deduct + extend by 1 month
+        const newBalance = balance - price;
+        await client.query('UPDATE users SET balance = $1 WHERE id = $2', [newBalance, sub.user_id]);
+        await client.query(
+          `INSERT INTO transactions (user_id, type, amount, provider_id)
+           VALUES ($1, 'charge', $2, $3)`,
+          [sub.user_id, price, `subscription_renewal:${sub.plan}`],
+        );
+        await client.query(
+          `UPDATE subscriptions SET expires_at = expires_at + interval '1 month', updated_at = now()
+           WHERE user_id = $1`,
+          [sub.user_id],
+        );
+        await client.query('COMMIT');
+        console.log(`[renewal] renewed user=${sub.user_id} plan=${sub.plan} charged=${price}`);
+        // Email notification
+        try {
+          await sendMail({
+            to: email,
+            subject: `NeuroGrid: тариф «${sub.plan === 'start' ? 'Старт' : 'Бизнес'}» продлён`,
+            html: `<p>Ваш тариф <strong>${sub.plan === 'start' ? 'Старт' : 'Бизнес'}</strong> продлён на месяц. Списано ${price} ₽. Остаток: ${newBalance.toFixed(2)} ₽.</p><p><a href="${config.frontendUrl}/wallet">Перейти в кошелёк</a></p>`,
+          });
+        } catch { /* mail failure non-critical */ }
+      } else {
+        // Insufficient funds — downgrade to free
+        await client.query(
+          `UPDATE subscriptions SET plan = 'free', expires_at = NULL, updated_at = now()
+           WHERE user_id = $1`,
+          [sub.user_id],
+        );
+        await client.query('COMMIT');
+        console.log(`[renewal] downgraded user=${sub.user_id} (balance=${balance} < price=${price})`);
+        try {
+          await sendMail({
+            to: email,
+            subject: 'NeuroGrid: тариф понижен до Бесплатного',
+            html: `<p>К сожалению, на вашем балансе недостаточно средств (${balance.toFixed(2)} ₽) для продления тарифа. Ваш тариф понижен до <strong>Бесплатного</strong>.</p><p>Пополните баланс и обновите тариф: <a href="${config.frontendUrl}/pricing">${config.frontendUrl}/pricing</a></p>`,
+          });
+        } catch { /* mail failure non-critical */ }
+      }
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error(`[renewal] error user=${sub.user_id}:`, err);
+    } finally {
+      client.release();
     }
   }
 }
@@ -176,6 +274,54 @@ function msUntilNext8AM(): number {
   return nextMoscow.getTime() - nowMoscow.getTime();
 }
 
+export async function runWeeklyReports(): Promise<void> {
+  const { rows: users } = await db.query<{ id: string; email: string }>(
+    `SELECT u.id, u.email
+     FROM users u
+     WHERE u.digest_enabled = true
+       AND EXISTS (
+         SELECT 1 FROM marketplace_connections mc
+         WHERE mc.user_id = u.id AND mc.status = 'active'
+       )`,
+  );
+  console.log(`[weekly-reports] generating for ${users.length} users`);
+  const end = new Date();
+  end.setHours(0, 0, 0, 0);
+  const start = new Date(end.getTime() - 7 * 86400000);
+  for (const user of users) {
+    try {
+      await generateAndEmailReport(user.id, user.email, start, end);
+      console.log(`[weekly-reports] sent to ${user.email}`);
+    } catch (err) {
+      console.error(`[weekly-reports] error for ${user.email}:`, err);
+    }
+  }
+}
+
+function msUntilNextMonday9AM(): number {
+  const moscowOffsetMs = 3 * 60 * 60 * 1000;
+  const now = new Date();
+  const nowMoscow = new Date(now.getTime() + moscowOffsetMs);
+  // day 0=Sun,1=Mon,...,6=Sat — target Monday 09:00 Moscow
+  const day = nowMoscow.getUTCDay();
+  const daysUntilMon = day === 1 ? 7 : (8 - day) % 7;
+  const nextMon = new Date(nowMoscow);
+  nextMon.setUTCDate(nowMoscow.getUTCDate() + daysUntilMon);
+  nextMon.setUTCHours(9, 0, 0, 0);
+  // nextMon is Monday 09:00 Moscow (= 06:00 UTC)
+  return nextMon.getTime() - nowMoscow.getTime();
+}
+
+function msUntilFirst3AM(): number {
+  // Target 03:00 Moscow time on the 1st of next month
+  const now = new Date();
+  const moscowOffsetMs = 3 * 60 * 60 * 1000;
+  const nowMoscow = new Date(now.getTime() + moscowOffsetMs);
+  const next = new Date(Date.UTC(nowMoscow.getUTCFullYear(), nowMoscow.getUTCMonth() + 1, 1, 0, 0, 0));
+  // next is 00:00 UTC on 1st of next month = 03:00 Moscow
+  return next.getTime() - now.getTime();
+}
+
 export function startSyncWorker() {
   // Stock: every hour
   setInterval(() => { runStockSync().catch(console.error); }, 60 * 60 * 1000);
@@ -188,6 +334,28 @@ export function startSyncWorker() {
     runDailyDigest().catch(console.error);
     setInterval(() => { runDailyDigest().catch(console.error); }, 24 * 60 * 60 * 1000);
   }, msUntilNext8AM());
+
+  // Monthly renewal: 1st of month at 03:00 Moscow
+  function scheduleNextRenewal() {
+    const ms = msUntilFirst3AM();
+    console.log(`[renewal] next run in ${Math.round(ms / 3600000)}h`);
+    setTimeout(() => {
+      runMonthlyRenewal().catch(console.error);
+      scheduleNextRenewal();
+    }, ms);
+  }
+  scheduleNextRenewal();
+
+  // Weekly reports: every Monday at 09:00 Moscow
+  function scheduleNextWeeklyReports() {
+    const ms = msUntilNextMonday9AM();
+    console.log(`[weekly-reports] next run in ${Math.round(ms / 3600000)}h`);
+    setTimeout(() => {
+      runWeeklyReports().catch(console.error);
+      scheduleNextWeeklyReports();
+    }, ms);
+  }
+  scheduleNextWeeklyReports();
 
   // Run once on startup after 30s delay
   setTimeout(() => { runStockSync().catch(console.error); }, 30_000);

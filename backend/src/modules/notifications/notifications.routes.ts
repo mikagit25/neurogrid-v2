@@ -42,3 +42,23 @@ notificationsRouter.patch('/digest-settings', async (req: Request, res: Response
   );
   res.json({ ok: true, digestEnabled: enabled });
 });
+
+// GET /api/notifications/alert-email-settings
+notificationsRouter.get('/alert-email-settings', async (req: Request, res: Response) => {
+  const { rows } = await db.query(
+    'SELECT alert_email_enabled FROM users WHERE id = $1',
+    [req.user!.userId],
+  );
+  res.json({ alertEmailEnabled: rows[0]?.alert_email_enabled ?? true });
+});
+
+// PATCH /api/notifications/alert-email-settings
+notificationsRouter.patch('/alert-email-settings', async (req: Request, res: Response) => {
+  const { enabled } = req.body;
+  if (typeof enabled !== 'boolean') { res.status(400).json({ error: 'enabled must be boolean' }); return; }
+  await db.query(
+    'UPDATE users SET alert_email_enabled = $1 WHERE id = $2',
+    [enabled, req.user!.userId],
+  );
+  res.json({ ok: true, alertEmailEnabled: enabled });
+});

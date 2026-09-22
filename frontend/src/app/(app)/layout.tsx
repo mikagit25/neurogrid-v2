@@ -8,6 +8,8 @@ import type { StoredUser } from '@/lib/auth';
 import type { Notification } from '@/lib/api';
 import Sidebar from '@/components/Sidebar';
 import MobileNav from '@/components/MobileNav';
+import CommandPalette from '@/components/CommandPalette';
+import OnboardingWizard from '@/components/OnboardingWizard';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -15,6 +17,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showPalette, setShowPalette] = useState(false);
 
   const loadUser = useCallback(async () => {
     const token = getToken();
@@ -60,7 +63,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     loadUser();
     loadNotifications();
+    // Poll for new notifications every 60s
+    const interval = setInterval(loadNotifications, 60_000);
+    return () => clearInterval(interval);
   }, [loadUser, loadNotifications]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowPalette(p => !p);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   async function handleMarkRead(id: string) {
     await markNotificationRead(id);
@@ -86,7 +103,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Mobile + desktop top header */}
         <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex items-center justify-between">
           <div className="md:hidden font-bold text-slate-900 text-lg">NeuroGrid</div>
-          <div className="hidden md:block" />
+          {/* Command palette trigger */}
+          <button
+            onClick={() => setShowPalette(true)}
+            className="hidden md:flex items-center gap-2 px-3 py-1.5 text-sm text-slate-400 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 105 11a6 6 0 0012 0z" />
+            </svg>
+            <span>Поиск</span>
+            <kbd className="ml-1 text-xs border border-slate-300 rounded px-1">⌘K</kbd>
+          </button>
           <div className="flex items-center gap-3">
             {/* Notifications */}
             <div className="relative">
@@ -98,7 +125,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                 </svg>
                 {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 bg-red-500 rounded-full flex items-center justify-center px-0.5">
+                    <span className="text-white text-[10px] font-bold leading-none">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  </span>
                 )}
               </button>
               {showNotifications && (
@@ -159,6 +190,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </main>
       </div>
       <MobileNav />
+      <CommandPalette open={showPalette} onClose={() => setShowPalette(false)} />
+      <OnboardingWizard />
       {/* Close notifications overlay */}
       {showNotifications && (
         <div
