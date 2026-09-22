@@ -10,6 +10,7 @@ import { redis } from '../../queue/queue';
 import { config } from '../../config';
 import { db } from '../../db';
 import { sendPasswordResetEmail } from '../../utils/mailer';
+import { seedDemoAccount } from './demo.seeder';
 import type { JwtPayload } from './auth.service';
 
 export const authRouter = Router();
@@ -210,6 +211,74 @@ authRouter.post('/reset-password', async (req: Request, res: Response) => {
     res.json({ ok: true, message: 'Пароль успешно изменён' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Demo account ─────────────────────────────────────────────────────────────
+// POST /api/auth/demo — creates an isolated demo session (rate limited: 10/hour per IP)
+authRouter.post('/demo', async (req: Request, res: Response) => {
+  const ip = (req.ip ?? '').replace(/^::ffff:/, '');
+  const rateKey = `demo_rate:${ip}`;
+  const count = parseInt((await redis.get(rateKey)) ?? '0');
+  if (count >= 10) {
+    res.status(429).json({ error: 'Слишком много демо-сессий. Попробуйте через час.' });
+    return;
+  }
+
+  try {
+    const demoEmail = `demo_${crypto.randomBytes(8).toString('hex')}@demo.neurogrid`;
+    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+
+    // Create demo user
+    const { rows: [user] } = await db.query(
+      `INSERT INTO users (email, password_hash, is_demo, demo_expires_at)
+       VALUES ($1, NULL, true, $2)
+       RETURNING id, email, balance, is_admin, is_demo, demo_expires_at`,
+      [demoEmail, expiresAt],
+    );
+
+    // Create fake marketplace connections (credentials_enc is dummy for demo)
+    const { rows: [wbConn] } = await db.query(
+      `INSERT INTO marketplace_connections (user_id, platform, credentials_enc, status, display_name)
+       VALUES ($1, 'wb', 'demo_placeholder', 'active', 'WB Demo Shop')
+       RETURNING id`,
+      [user.id],
+    );
+    const { rows: [ozonConn] } = await db.query(
+      `INSERT INTO marketplace_connections (user_id, platform, credentials_enc, status, display_name)
+       VALUES ($1, 'ozon', 'demo_placeholder', 'active', 'Ozon Demo Shop')
+       RETURNING id`,
+      [user.id],
+    );
+
+    await seedDemoAccount(user.id, wbConn.id, ozonConn.id);
+
+    const token = jwt.sign(
+      { userId: user.id, isAdmin: false },
+      config.jwt.secret,
+      { expiresIn: '2h' } as jwt.SignOptions,
+    );
+
+    // Rate limit: increment counter, expire after 1 hour
+    const pipeline = redis.pipeline();
+    pipeline.incr(rateKey);
+    pipeline.expire(rateKey, 3600);
+    await pipeline.exec();
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        balance: 4850, // demo shows pre-loaded balance
+        is_admin: false,
+        is_demo: true,
+        demo_expires_at: expiresAt.toISOString(),
+      },
+    });
+  } catch (err: any) {
+    console.error('[demo]', err);
+    res.status(500).json({ error: 'Не удалось создать демо-аккаунт' });
   }
 });
 

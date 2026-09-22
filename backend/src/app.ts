@@ -49,6 +49,7 @@ import { processScenarioJob } from './queue/workers/scenario.worker';
 import { startAutomationWorker } from './queue/workers/automation.worker';
 import { startSyncWorker } from './queue/workers/sync.worker';
 import { startAlertWorker } from './queue/workers/alert.worker';
+import { db } from './db';
 
 const app = express();
 
@@ -118,6 +119,20 @@ startWorker(processScenarioJob);
 startAutomationWorker();
 startSyncWorker();
 startAlertWorker();
+
+// Purge expired demo accounts every 15 minutes
+setInterval(async () => {
+  try {
+    const { rowCount } = await db.query(
+      `DELETE FROM users WHERE is_demo = true AND demo_expires_at < now()`,
+    );
+    if (rowCount && rowCount > 0) {
+      console.log(`[demo-cleanup] Removed ${rowCount} expired demo accounts`);
+    }
+  } catch (err) {
+    console.error('[demo-cleanup]', err);
+  }
+}, 15 * 60 * 1000);
 
 app.listen(config.port, () => {
   console.log(`NeuroGrid backend :${config.port} [${config.nodeEnv}]`);

@@ -131,7 +131,7 @@ export async function upsertGoogleUser(profile: { email: string; googleId: strin
 
 export async function getUserById(userId: string) {
   const { rows } = await db.query(
-    'SELECT id, email, balance, is_admin, created_at FROM users WHERE id = $1',
+    'SELECT id, email, balance, is_admin, is_demo, demo_expires_at, created_at FROM users WHERE id = $1',
     [userId]
   );
   return rows[0] || null;

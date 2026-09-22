@@ -38,6 +38,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         email: freshUser.email,
         balance: freshUser.balance,
         isAdmin: freshUser.is_admin,
+        isDemo: freshUser.is_demo,
+        demoExpiresAt: freshUser.demo_expires_at,
       };
       setUser(stored);
       setUserState(stored);
@@ -185,6 +187,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             )}
           </div>
         </header>
+        {user?.isDemo && (
+          <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between gap-3 text-sm">
+            <div className="flex items-center gap-2 text-amber-800">
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>
+                <strong>Демо-режим</strong> — вы просматриваете тестовый аккаунт с реалистичными данными. Сессия истечёт через 2 часа.
+              </span>
+            </div>
+            <a
+              href="/register"
+              className="shrink-0 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium transition-colors"
+            >
+              Создать аккаунт →
+            </a>
+          </div>
+        )}
         <main className="flex-1 p-4 md:p-6 pb-20 md:pb-6 max-w-7xl w-full mx-auto">
           {children}
         </main>

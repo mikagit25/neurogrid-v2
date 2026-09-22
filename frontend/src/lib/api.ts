@@ -43,6 +43,8 @@ export interface User {
   email: string;
   balance: number;
   is_admin: boolean;
+  is_demo?: boolean;
+  demo_expires_at?: string;
 }
 
 export interface Scenario {
@@ -152,6 +154,17 @@ export async function getMe(): Promise<{ user: User }> {
   if (!res.ok) throw new Error('Не удалось загрузить профиль');
   const data = await res.json();
   // Postgres NUMERIC comes back as a string — coerce to number
+  if (data.user) data.user.balance = Number(data.user.balance ?? 0);
+  return data;
+}
+
+export async function createDemoSession(): Promise<{ token: string; user: User }> {
+  const res = await fetch(`${API_URL}/api/auth/demo`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Не удалось создать демо-сессию');
+  }
+  const data = await res.json();
   if (data.user) data.user.balance = Number(data.user.balance ?? 0);
   return data;
 }

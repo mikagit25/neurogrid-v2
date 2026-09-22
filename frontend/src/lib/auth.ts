@@ -6,6 +6,8 @@ export interface StoredUser {
   email: string;
   balance: number;
   isAdmin: boolean;
+  isDemo?: boolean;
+  demoExpiresAt?: string;
 }
 
 export function getToken(): string | null {
