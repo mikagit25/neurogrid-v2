@@ -104,7 +104,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile + desktop top header */}
         <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex items-center justify-between">
-          <div className="md:hidden font-bold text-slate-900 text-lg">NeuroGrid</div>
+          <a href="/" className="md:hidden font-bold text-slate-900 text-lg hover:text-purple-600 transition-colors">NeuroGrid</a>
           {/* Command palette trigger */}
           <button
             onClick={() => setShowPalette(true)}
