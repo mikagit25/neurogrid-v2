@@ -2,9 +2,13 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { getMe, topupWallet, getTransactions, getTopups, getMySubscription } from '@/lib/api';
-import { setUser } from '@/lib/auth';
-import type { Transaction, Topup, SubscriptionInfo } from '@/lib/api';
+import {
+  getMe, topupWallet, getTransactions, getTopups, getMySubscription,
+  getInvoices, requestInvoice, cancelInvoice, getInvoiceHtmlUrl,
+  getActs, getActHtmlUrl,
+} from '@/lib/api';
+import { setUser, getToken } from '@/lib/auth';
+import type { Transaction, Topup, SubscriptionInfo, BankInvoice, ServiceAct } from '@/lib/api';
 import type { StoredUser } from '@/lib/auth';
 import Link from 'next/link';
 
@@ -83,18 +87,25 @@ export default function WalletPage() {
   const [amount, setAmount] = useState('');
   const [topupLoading, setTopupLoading] = useState(false);
   const [topupError, setTopupError] = useState('');
-  const [activeTab, setActiveTab] = useState<'transactions' | 'topups'>('transactions');
+  const [activeTab, setActiveTab] = useState<'transactions' | 'topups' | 'invoices' | 'acts'>('transactions');
+  const [invoices, setInvoices] = useState<BankInvoice[]>([]);
+  const [acts, setActs] = useState<ServiceAct[]>([]);
+  const [invoiceForm, setInvoiceForm] = useState({ plan: 'business' as 'start' | 'business', months: 1, payerName: '' });
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceError, setInvoiceError] = useState('');
 
   const PLAN_NAMES: Record<string, string> = { free: 'Бесплатный', start: 'Старт', business: 'Бизнес' };
   const PLAN_PRICES: Record<string, number> = { free: 0, start: 490, business: 990 };
 
   const loadData = useCallback(async () => {
     try {
-      const [meData, txData, topupData, subData] = await Promise.all([
+      const [meData, txData, topupData, subData, invData, actData] = await Promise.all([
         getMe(),
         getTransactions(),
         getTopups(),
         getMySubscription().catch(() => null),
+        getInvoices().catch(() => ({ invoices: [] })),
+        getActs().catch(() => ({ acts: [] })),
       ]);
       const stored: StoredUser = {
         id: meData.user.id,
@@ -107,6 +118,8 @@ export default function WalletPage() {
       setTransactions(txData);
       setTopups(topupData);
       if (subData) setSubscription(subData.subscription);
+      setInvoices(invData.invoices);
+      setActs(actData.acts);
     } catch {
       // ignore
     } finally {
@@ -139,6 +152,43 @@ export default function WalletPage() {
     } catch (e) {
       setTopupError(e instanceof Error ? e.message : 'Ошибка пополнения');
       setTopupLoading(false);
+    }
+  }
+
+  async function handleRequestInvoice(e: React.FormEvent) {
+    e.preventDefault();
+    setInvoiceError('');
+    setInvoiceLoading(true);
+    try {
+      const { invoice } = await requestInvoice(invoiceForm.plan, invoiceForm.months, invoiceForm.payerName || undefined);
+      setInvoices(prev => [invoice, ...prev]);
+      setInvoiceForm({ plan: 'business', months: 1, payerName: '' });
+    } catch (err) {
+      setInvoiceError(err instanceof Error ? err.message : 'Ошибка');
+    } finally {
+      setInvoiceLoading(false);
+    }
+  }
+
+  async function handleCancelInvoice(id: string) {
+    try {
+      await cancelInvoice(id);
+      setInvoices(prev => prev.map(i => i.id === id ? { ...i, status: 'cancelled' } : i));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Ошибка');
+    }
+  }
+
+  async function openDoc(url: string) {
+    const token = getToken();
+    try {
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error('Ошибка загрузки документа');
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Ошибка');
     }
   }
 
@@ -290,18 +340,23 @@ export default function WalletPage() {
       {/* History tabs */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200">
         <div className="border-b border-slate-100">
-          <div className="flex">
-            {(['transactions', 'topups'] as const).map((tab) => (
+          <div className="flex overflow-x-auto">
+            {([
+              { id: 'transactions', label: 'Транзакции' },
+              { id: 'topups', label: 'Пополнения' },
+              { id: 'invoices', label: 'Счета на оплату' },
+              { id: 'acts', label: 'Акты выполненных работ' },
+            ] as const).map((tab) => (
               <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === tab
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`whitespace-nowrap px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === tab.id
                     ? 'border-purple-600 text-purple-600'
                     : 'border-transparent text-slate-500 hover:text-slate-700'
                 }`}
               >
-                {tab === 'transactions' ? 'Транзакции' : 'Пополнения'}
+                {tab.label}
               </button>
             ))}
           </div>
@@ -338,7 +393,7 @@ export default function WalletPage() {
                       <td className={`px-5 py-3 font-medium ${
                         isCreditType(tx.type) ? 'text-green-600' : 'text-red-600'
                       }`}>
-                        {isCreditType(tx.type) ? '+' : '−'}{Number(tx.amount).toLocaleString('ru-RU')} ₽
+                        {isCreditType(tx.type) ? '+' : '−'}{Number(tx.amount).toLocaleString('ru-RU')} BYN
                       </td>
                       <td className="px-5 py-3 text-slate-500">{formatDate(tx.created_at)}</td>
                     </tr>
@@ -347,7 +402,7 @@ export default function WalletPage() {
               </table>
             </div>
           )
-        ) : (
+        ) : activeTab === 'topups' ? (
           topups.length === 0 ? (
             <div className="p-8 text-center text-slate-500 text-sm">Пополнений пока нет</div>
           ) : (
@@ -382,6 +437,156 @@ export default function WalletPage() {
               </table>
             </div>
           )
+        ) : activeTab === 'invoices' ? (
+          <div className="p-5 space-y-5">
+            {/* Request form */}
+            <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold text-slate-700 mb-3">Запросить счёт на оплату</h3>
+              <form onSubmit={handleRequestInvoice} className="flex flex-wrap gap-3 items-end">
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Тариф</label>
+                  <select
+                    value={invoiceForm.plan}
+                    onChange={e => setInvoiceForm(f => ({ ...f, plan: e.target.value as 'start' | 'business' }))}
+                    className="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                  >
+                    <option value="start">Старт — 490 BYN/мес.</option>
+                    <option value="business">Бизнес — 990 BYN/мес.</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Месяцев</label>
+                  <select
+                    value={invoiceForm.months}
+                    onChange={e => setInvoiceForm(f => ({ ...f, months: Number(e.target.value) }))}
+                    className="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                  >
+                    {[1,2,3,6,12].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div className="flex-1 min-w-[200px]">
+                  <label className="block text-xs text-slate-500 mb-1">Плательщик (необязательно)</label>
+                  <input
+                    type="text"
+                    placeholder="ИП / ООО / ФИО"
+                    value={invoiceForm.payerName}
+                    onChange={e => setInvoiceForm(f => ({ ...f, payerName: e.target.value }))}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={invoiceLoading}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                >
+                  {invoiceLoading ? 'Создание…' : 'Сформировать счёт'}
+                </button>
+              </form>
+              {invoiceError && <p className="text-red-600 text-xs mt-2">{invoiceError}</p>}
+              <p className="text-xs text-slate-400 mt-2">
+                Счёт содержит реквизиты для перевода на расчётный счёт. После оплаты — сообщите нам, и доступ будет активирован.
+              </p>
+            </div>
+
+            {/* Invoice list */}
+            {invoices.length === 0 ? (
+              <p className="text-center text-slate-500 text-sm py-4">Счетов пока нет</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100">
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Номер</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Тариф</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Сумма</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Статус</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Дата</th>
+                      <th className="px-4 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {invoices.map(inv => (
+                      <tr key={inv.id} className="hover:bg-slate-50/50">
+                        <td className="px-4 py-3 font-mono text-xs text-slate-700">{inv.invoice_number}</td>
+                        <td className="px-4 py-3 text-slate-700">
+                          {inv.plan === 'business' ? 'Бизнес' : 'Старт'} × {inv.months} мес.
+                        </td>
+                        <td className="px-4 py-3 font-medium text-slate-800">{Number(inv.amount).toLocaleString('ru-RU')} BYN</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            inv.status === 'paid' ? 'bg-green-100 text-green-700'
+                            : inv.status === 'cancelled' ? 'bg-slate-100 text-slate-500'
+                            : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {inv.status === 'paid' ? 'Оплачен' : inv.status === 'cancelled' ? 'Отменён' : 'Ожидает оплаты'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 text-xs">{formatDate(inv.created_at)}</td>
+                        <td className="px-4 py-3 flex gap-2">
+                          <button
+                            onClick={() => openDoc(getInvoiceHtmlUrl(inv.id))}
+                            className="text-xs text-purple-600 hover:text-purple-800 font-medium"
+                          >
+                            Скачать
+                          </button>
+                          {inv.status === 'pending' && (
+                            <button
+                              onClick={() => handleCancelInvoice(inv.id)}
+                              className="text-xs text-slate-400 hover:text-red-500"
+                            >
+                              Отменить
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Acts tab */
+          <div className="p-5 space-y-4">
+            <p className="text-sm text-slate-500">
+              Акты выполненных работ формируются автоматически 1-го числа каждого месяца за предыдущий период.
+            </p>
+            {acts.length === 0 ? (
+              <p className="text-center text-slate-400 text-sm py-6">Актов пока нет. Они появятся в начале следующего месяца.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100">
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Номер акта</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Период</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Сумма</th>
+                      <th className="px-4 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {acts.map(act => (
+                      <tr key={act.id} className="hover:bg-slate-50/50">
+                        <td className="px-4 py-3 font-mono text-xs text-slate-700">{act.act_number}</td>
+                        <td className="px-4 py-3 text-slate-700">
+                          {new Date(act.period_from).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-slate-800">{Number(act.amount).toLocaleString('ru-RU')} BYN</td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => openDoc(getActHtmlUrl(act.id))}
+                            className="text-xs text-purple-600 hover:text-purple-800 font-medium"
+                          >
+                            Скачать
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

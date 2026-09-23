@@ -113,3 +113,67 @@ adminRouter.patch('/scenarios/:id', async (req: Request, res: Response) => {
   await db.query('UPDATE scenarios SET is_active = $1 WHERE id = $2', [is_active, req.params.id]);
   res.json({ ok: true });
 });
+
+// ---- Invoice management ----
+
+const markPaidSchema = z.object({ notes: z.string().max(500).optional() });
+
+// GET /api/admin/invoices?status=pending|paid|cancelled
+adminRouter.get('/invoices', async (req: Request, res: Response) => {
+  try {
+    const { listAllInvoices } = await import('../invoices/invoices.service');
+    const status = req.query.status as string | undefined;
+    const invoices = await listAllInvoices(status);
+    res.json({ invoices });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/invoices/:id/html — preview invoice
+adminRouter.get('/invoices/:id/html', async (req: Request, res: Response) => {
+  try {
+    const { getInvoiceById, generateInvoiceHtml } = await import('../invoices/invoices.service');
+    const invoice = await getInvoiceById(req.params.id);
+    if (!invoice) { res.status(404).json({ error: 'Not found' }); return; }
+    const html = await generateInvoiceHtml(invoice);
+    const num = invoice.invoice_number.replace(/[^A-Za-z0-9_\-]/g, '-');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Disposition', `inline; filename="invoice-${num}.html"`);
+    res.send(html);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/invoices/:id/mark-paid
+adminRouter.post('/invoices/:id/mark-paid', async (req: Request, res: Response) => {
+  const parsed = markPaidSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+  try {
+    const { markInvoicePaid } = await import('../invoices/invoices.service');
+    const invoice = await markInvoicePaid(req.params.id, req.user!.userId, parsed.data.notes);
+    res.json({ ok: true, invoice });
+  } catch (err: any) {
+    res.status(err.status ?? 500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/acts/generate — manually trigger act generation for a user+period
+adminRouter.post('/acts/generate', async (req: Request, res: Response) => {
+  const schema = z.object({
+    user_id: z.string().uuid(),
+    year: z.number().int().min(2024).max(2030),
+    month: z.number().int().min(1).max(12),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+  try {
+    const { adminGenerateAct } = await import('../acts/acts.service');
+    const act = await adminGenerateAct(parsed.data.user_id, parsed.data.year, parsed.data.month);
+    if (!act) { res.status(404).json({ error: 'No billable activity for this period' }); return; }
+    res.json({ ok: true, act });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});

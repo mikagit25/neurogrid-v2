@@ -2923,3 +2923,53 @@ export interface CalcAiAdvice {
 export async function getCalcAiAdvice(input: UnitEconInput & Partial<UnitEconResult>): Promise<CalcAiAdvice> {
   return apiRequest('/api/calculator/ai-advice', { method: 'POST', body: JSON.stringify(input) });
 }
+
+// ── Invoices & Acts ───────────────────────────────────────────────────────────
+
+export interface BankInvoice {
+  id: string;
+  invoice_number: string;
+  plan: string;
+  months: number;
+  amount: string;
+  status: 'pending' | 'paid' | 'cancelled';
+  payer_name?: string;
+  created_at: string;
+  paid_at?: string;
+}
+
+export interface ServiceAct {
+  id: string;
+  act_number: string;
+  period_from: string;
+  period_to: string;
+  amount: string;
+  created_at: string;
+}
+
+export async function getInvoices(): Promise<{ invoices: BankInvoice[] }> {
+  return apiRequest('/api/invoices/');
+}
+
+export async function requestInvoice(plan: 'start' | 'business', months: number, payerName?: string) {
+  return apiRequest('/api/invoices/request', {
+    method: 'POST',
+    body: JSON.stringify({ plan, months, payer_name: payerName }),
+  });
+}
+
+export async function cancelInvoice(id: string) {
+  return apiRequest(`/api/invoices/${id}`, { method: 'DELETE' });
+}
+
+export function getInvoiceHtmlUrl(id: string): string {
+  return `${API_URL}/api/invoices/${id}/html`;
+}
+
+export async function getActs(): Promise<{ acts: ServiceAct[] }> {
+  return apiRequest('/api/acts/');
+}
+
+export function getActHtmlUrl(id: string): string {
+  return `${API_URL}/api/acts/${id}/html`;
+}

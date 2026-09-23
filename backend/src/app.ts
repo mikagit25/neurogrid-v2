@@ -44,6 +44,8 @@ import { watchlistRouter } from './modules/watchlist/watchlist.routes';
 import { activityRouter } from './modules/activity/activity.routes';
 import { exportRouter } from './modules/export/export.routes';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes';
+import { invoicesRouter } from './modules/invoices/invoices.routes';
+import { actsRouter } from './modules/acts/acts.routes';
 import { startWorker } from './queue/queue';
 import { processScenarioJob } from './queue/workers/scenario.worker';
 import { startAutomationWorker } from './queue/workers/automation.worker';
@@ -108,6 +110,8 @@ app.use('/api/watchlist', watchlistRouter);
 app.use('/api/activity', activityRouter);
 app.use('/api/export', exportRouter);
 app.use('/api/dashboard', dashboardRouter);
+app.use('/api/invoices', invoicesRouter);
+app.use('/api/acts', actsRouter);
 
 // Serve generated images (infographics, AI photos)
 app.use('/images', express.static(path.join(__dirname, '../public/images')));
@@ -127,6 +131,19 @@ startWorker(processScenarioJob);
 startAutomationWorker();
 startSyncWorker();
 startAlertWorker();
+
+// Generate monthly acts on the 1st of each month (check every hour)
+setInterval(async () => {
+  const now = new Date();
+  if (now.getDate() !== 1 || now.getHours() !== 2) return; // run at 02:xx on the 1st
+  try {
+    const { generateMonthlyActs } = await import('./modules/acts/acts.service');
+    const n = await generateMonthlyActs();
+    if (n > 0) console.log(`[acts-cron] Generated ${n} monthly acts`);
+  } catch (err) {
+    console.error('[acts-cron]', err);
+  }
+}, 60 * 60 * 1000);
 
 // Purge expired demo accounts every 15 minutes
 setInterval(async () => {
