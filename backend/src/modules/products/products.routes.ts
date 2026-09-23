@@ -49,6 +49,51 @@ productsRouter.get('/', async (req: Request, res: Response) => {
       }
     }
 
+    // Fallback: if adapters returned nothing, serve from user_catalog + stock_snapshots
+    if (allProducts.length === 0) {
+      const { rows } = await db.query(
+        `SELECT
+           uc.platform, uc.sku, uc.title, uc.purchase_price,
+           COALESCE(ss.quantity, 0) AS stock,
+           COALESCE(
+             (SELECT ROUND(SUM(revenue)::numeric / NULLIF(SUM(quantity), 0), 0)
+              FROM finance_records
+              WHERE user_id = uc.user_id AND sku = uc.sku AND platform = uc.platform
+                AND period_from >= NOW() - INTERVAL '30 days'),
+             uc.purchase_price * 2.5
+           )::numeric AS price
+         FROM user_catalog uc
+         LEFT JOIN LATERAL (
+           SELECT SUM(quantity)::int AS quantity
+           FROM stock_snapshots
+           WHERE user_id = $1 AND platform = uc.platform AND sku = uc.sku
+         ) ss ON true
+         WHERE uc.user_id = $1
+         ORDER BY uc.updated_at DESC
+         LIMIT $2`,
+        [req.user!.userId, limit],
+      );
+
+      for (const row of rows) {
+        const p = {
+          sku: row.sku,
+          title: row.title ?? row.sku,
+          price: parseFloat(row.price ?? row.purchase_price ?? '0'),
+          stock: parseInt(row.stock ?? '0', 10),
+          description: '',
+        };
+        const { score, issues } = scoreProduct(p, row.platform);
+        allProducts.push({
+          ...p,
+          score,
+          scoreLabel: scoreLabel(score),
+          issues,
+          platform: row.platform,
+          connectionId: '',
+        });
+      }
+    }
+
     // Sort: worst first so user sees what to fix
     allProducts.sort((a, b) => a.score - b.score);
 

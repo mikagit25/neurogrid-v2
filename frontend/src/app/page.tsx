@@ -440,6 +440,10 @@ export default function LandingPage() {
           <div className="text-center mb-12">
             <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">Тарифы</h2>
             <p className="text-slate-500 text-lg">Начните бесплатно, переходите когда готовы.</p>
+            <div className="inline-flex items-center gap-2 mt-3 px-4 py-2 bg-amber-50 border border-amber-200 rounded-full text-sm text-amber-800">
+              <span className="text-amber-500">★</span>
+              <span>Промо-цены для первых пользователей — окончательные тарифы будут выше</span>
+            </div>
           </div>
           <div className="grid md:grid-cols-3 gap-6 items-start">
             {PLANS.map(plan => (

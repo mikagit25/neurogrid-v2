@@ -112,6 +112,54 @@ analyticsRouter.get('/summary', async (req: Request, res: Response) => {
       const totalNetPayout = Object.values(byPlatform).reduce((s, p) => s + p.netPayout, 0);
       const returnRate = totalOrders > 0 ? Math.round((totalReturns / (totalOrders + totalReturns)) * 100) : 0;
 
+      // Fallback to finance_records when adapters returned no data (demo or no real connection)
+      if (totalRevenue === 0 && totalOrders === 0) {
+        const { rows: finRows } = await db.query(
+          `SELECT period_from::date AS date, platform,
+             SUM(revenue)::float AS revenue,
+             SUM(quantity)::int  AS orders,
+             SUM(net_payout)::float AS net_payout
+           FROM finance_records
+           WHERE user_id = $1 AND period_from >= $2 AND period_from <= $3
+           GROUP BY period_from::date, platform
+           ORDER BY period_from::date`,
+          [userId, dateFrom, dateTo],
+        );
+
+        const fbChartMap: Record<string, Record<string, number | string>> = {};
+        const fbByPlatform: typeof byPlatform = {
+          wb: { revenue: 0, orders: 0, returns: 0, netPayout: 0 },
+          ozon: { revenue: 0, orders: 0, returns: 0, netPayout: 0 },
+          ym: { revenue: 0, orders: 0, returns: 0, netPayout: 0 },
+          mm: { revenue: 0, orders: 0, returns: 0, netPayout: 0 },
+        };
+
+        for (const r of finRows) {
+          const d = r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date);
+          if (!fbChartMap[d]) fbChartMap[d] = { date: d, wb: 0, ozon: 0, ym: 0, mm: 0, total: 0 };
+          const plt = r.platform as 'wb' | 'ozon' | 'ym' | 'mm';
+          if (!fbByPlatform[plt]) fbByPlatform[plt] = { revenue: 0, orders: 0, returns: 0, netPayout: 0 };
+          fbChartMap[d][plt] = (fbChartMap[d][plt] as number) + Number(r.revenue);
+          (fbChartMap[d].total as number) += Number(r.revenue);
+          fbByPlatform[plt].revenue += Number(r.revenue);
+          fbByPlatform[plt].orders += Number(r.orders);
+          fbByPlatform[plt].netPayout += Number(r.net_payout);
+        }
+
+        const fbTotalRevenue = Object.values(fbByPlatform).reduce((s, p) => s + p.revenue, 0);
+        const fbTotalOrders = Object.values(fbByPlatform).reduce((s, p) => s + p.orders, 0);
+        const fbTotalNetPayout = Object.values(fbByPlatform).reduce((s, p) => s + p.netPayout, 0);
+
+        return {
+          period, dateFrom, dateTo,
+          summary: { totalRevenue: fbTotalRevenue, totalOrders: fbTotalOrders, totalReturns: 0, totalNetPayout: fbTotalNetPayout, returnRate: 0 },
+          byPlatform: fbByPlatform,
+          chart: Object.values(fbChartMap).sort((a, b) => String(a.date).localeCompare(String(b.date))),
+          stockAlerts: [],
+          connections: [],
+        };
+      }
+
       return {
         period, dateFrom, dateTo,
         summary: { totalRevenue, totalOrders, totalReturns, totalNetPayout, returnRate },
