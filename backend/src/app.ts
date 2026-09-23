@@ -46,6 +46,7 @@ import { exportRouter } from './modules/export/export.routes';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes';
 import { invoicesRouter } from './modules/invoices/invoices.routes';
 import { actsRouter } from './modules/acts/acts.routes';
+import { billingProfileRouter } from './modules/profile/billing.routes';
 import { startWorker } from './queue/queue';
 import { processScenarioJob } from './queue/workers/scenario.worker';
 import { startAutomationWorker } from './queue/workers/automation.worker';
@@ -112,6 +113,7 @@ app.use('/api/export', exportRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/invoices', invoicesRouter);
 app.use('/api/acts', actsRouter);
+app.use('/api/profile/billing', billingProfileRouter);
 
 // Serve generated images (infographics, AI photos)
 app.use('/images', express.static(path.join(__dirname, '../public/images')));

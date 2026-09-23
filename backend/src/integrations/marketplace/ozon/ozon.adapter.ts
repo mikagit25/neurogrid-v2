@@ -1,6 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { withRetry } from '../../../utils/retry';
-import { MarketplaceAdapter, ProductInfo, CompetitorPrice, ReviewOrQuestion, SalesDay, FinanceSummary, FinanceRecord, WarehouseStock, MarketplaceOrder } from '../base.adapter';
+import { MarketplaceAdapter, SellerInfo, ProductInfo, CompetitorPrice, ReviewOrQuestion, SalesDay, FinanceSummary, FinanceRecord, WarehouseStock, MarketplaceOrder } from '../base.adapter';
 
 export interface OzonCredentials {
   clientId: string;
@@ -406,5 +406,21 @@ export class OzonAdapter implements MarketplaceAdapter {
       { responseType: 'arraybuffer' }
     );
     return Buffer.from(resp.data as ArrayBuffer).toString('base64');
+  }
+
+  async getSellerInfo(): Promise<Partial<SellerInfo>> {
+    try {
+      // Ozon Seller API: GET /v1/company — returns seller company profile
+      const resp = await this.client.get('/v1/company');
+      const d = resp.data?.result ?? resp.data ?? {};
+      return {
+        company_name:   d.company_name || d.name || undefined,
+        phone:          d.phone || undefined,
+        legal_address:  d.legal_address || d.address || undefined,
+        billing_email:  d.email || undefined,
+      };
+    } catch {
+      return {};
+    }
   }
 }

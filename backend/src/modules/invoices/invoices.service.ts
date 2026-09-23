@@ -72,11 +72,22 @@ export async function getInvoiceById(invoiceId: string) {
 }
 
 export async function generateInvoiceHtml(invoice: any): Promise<string> {
+  const { rows: profileRows } = await db.query(
+    'SELECT * FROM user_billing_profiles WHERE user_id = $1',
+    [invoice.user_id],
+  );
+  const p = profileRows[0];
   const data: InvoiceData = {
     invoiceNumber: invoice.invoice_number,
     date: formatDate(new Date(invoice.created_at)),
     payerEmail: invoice.user_email,
-    payerName: invoice.payer_name || undefined,
+    payerName:    p?.company_name || invoice.payer_name || undefined,
+    payerUnp:     p?.unp          || undefined,
+    payerAddress: p?.legal_address || undefined,
+    payerIban:    p?.iban          || undefined,
+    payerBank:    p?.bank_name     || undefined,
+    payerBic:     p?.bic           || undefined,
+    payerPhone:   p?.phone         || undefined,
     planName: invoice.plan,
     months: invoice.months,
     amount: parseFloat(invoice.amount),

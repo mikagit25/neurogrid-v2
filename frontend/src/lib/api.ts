@@ -123,10 +123,10 @@ export interface AdminRun {
 
 // ---- Auth ----
 
-export async function register(email: string, password: string): Promise<{ user: User }> {
+export async function register(email: string, password: string, agreementAccepted = false): Promise<{ user: User }> {
   const res = await apiFetch('/api/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, agreement_accepted: agreementAccepted }),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -2972,4 +2972,35 @@ export async function getActs(): Promise<{ acts: ServiceAct[] }> {
 
 export function getActHtmlUrl(id: string): string {
   return `${API_URL}/api/acts/${id}/html`;
+}
+
+// ---- Billing profile ----
+
+export interface BillingProfile {
+  user_id: string;
+  company_name?: string;
+  unp?: string;
+  legal_address?: string;
+  iban?: string;
+  bank_name?: string;
+  bic?: string;
+  contact_person?: string;
+  phone?: string;
+  billing_email?: string;
+  updated_at?: string;
+}
+
+export async function getBillingProfile(): Promise<{ profile: BillingProfile | null }> {
+  return apiRequest('/api/profile/billing');
+}
+
+export async function updateBillingProfile(data: Partial<BillingProfile>): Promise<{ profile: BillingProfile }> {
+  return apiRequest('/api/profile/billing', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function autofillBillingProfile(platform: 'wb' | 'ozon'): Promise<{ profile: Partial<BillingProfile> }> {
+  return apiRequest(`/api/profile/billing/autofill/${platform}`);
 }

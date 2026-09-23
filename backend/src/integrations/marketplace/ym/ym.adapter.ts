@@ -1,6 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import {
-  MarketplaceAdapter, ProductInfo, CompetitorPrice, ReviewOrQuestion,
+  MarketplaceAdapter, SellerInfo, ProductInfo, CompetitorPrice, ReviewOrQuestion,
   SalesDay, FinanceSummary, FinanceRecord, WarehouseStock, MarketplaceOrder, OrderLine,
 } from '../base.adapter';
 
@@ -291,5 +291,9 @@ export class YmAdapter implements MarketplaceAdapter {
 
   async resumeCampaign(_externalId: string): Promise<void> {
     // Яндекс Маркет advertising API — not yet supported
+  }
+
+  async getSellerInfo(): Promise<Partial<SellerInfo>> {
+    return {};
   }
 }

@@ -1,6 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import {
-  MarketplaceAdapter, ProductInfo, CompetitorPrice, ReviewOrQuestion,
+  MarketplaceAdapter, SellerInfo, ProductInfo, CompetitorPrice, ReviewOrQuestion,
   SalesDay, FinanceSummary, FinanceRecord, WarehouseStock, MarketplaceOrder, OrderLine,
 } from '../base.adapter';
 
@@ -328,5 +328,8 @@ export class MmAdapter implements MarketplaceAdapter {
 
   async resumeCampaign(_externalId: string): Promise<void> {
     // Мегамаркет advertising API — not yet supported
+  }
+  async getSellerInfo(): Promise<Partial<SellerInfo>> {
+    return {};
   }
 }

@@ -15,6 +15,9 @@ export interface ActData {
   periodTo: string;   // DD.MM.YYYY
   payerEmail: string;
   payerName?: string;
+  payerUnp?: string;
+  payerAddress?: string;
+  payerPhone?: string;
   services: ActService[];
   totalAmount: number;
 }
@@ -103,6 +106,9 @@ export function renderActHtml(data: ActData): string {
     <div class="party">
       <div class="party-title">Заказчик</div>
       <div class="party-row"><b>${data.payerName || data.payerEmail}</b></div>
+      ${data.payerUnp ? `<div class="party-row">УНП: ${data.payerUnp}</div>` : ''}
+      ${data.payerAddress ? `<div class="party-row">${data.payerAddress}</div>` : ''}
+      ${data.payerPhone ? `<div class="party-row">Тел: ${data.payerPhone}</div>` : ''}
       <div class="party-row">Email: ${data.payerEmail}</div>
     </div>
   </div>

@@ -18,6 +18,9 @@ export const authRouter = Router();
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
+  agreement_accepted: z.boolean().refine(v => v === true, {
+    message: 'Необходимо принять публичный договор оказания услуг',
+  }),
 });
 
 // Login schema — no min-length on password so lockout runs before Zod rejects
@@ -34,7 +37,7 @@ authRouter.post('/register', async (req: Request, res: Response) => {
   }
 
   try {
-    const user = await registerUser(parsed.data.email, parsed.data.password);
+    const user = await registerUser(parsed.data.email, parsed.data.password, parsed.data.agreement_accepted);
     res.status(201).json({ user });
   } catch (err: any) {
     res.status(err.status || 500).json({ error: err.message });

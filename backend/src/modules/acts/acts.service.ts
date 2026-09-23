@@ -153,12 +153,22 @@ export async function generateActHtml(act: any): Promise<string> {
   const periodFrom = new Date(act.period_from);
   const periodTo = new Date(act.period_to);
 
+  const { rows: profileRows } = await db.query(
+    'SELECT * FROM user_billing_profiles WHERE user_id = $1',
+    [act.user_id],
+  );
+  const p = profileRows[0];
+
   const data: ActData = {
     actNumber: act.act_number,
-    date: formatDate(periodTo), // signed on last day of period
+    date: formatDate(periodTo),
     periodFrom: formatDate(periodFrom),
     periodTo: formatDate(periodTo),
     payerEmail: act.user_email,
+    payerName:    p?.company_name || undefined,
+    payerUnp:     p?.unp          || undefined,
+    payerAddress: p?.legal_address || undefined,
+    payerPhone:   p?.phone         || undefined,
     services: act.services_json as ActService[],
     totalAmount: parseFloat(act.amount),
   };

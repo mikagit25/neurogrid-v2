@@ -54,18 +54,19 @@ export interface JwtPayload {
   isAdmin: boolean;
 }
 
-export async function registerUser(email: string, password: string) {
+export async function registerUser(email: string, password: string, agreementAccepted?: boolean) {
   const existing = await db.query('SELECT id FROM users WHERE email = $1', [email]);
   if (existing.rows.length > 0) {
     throw Object.assign(new Error('Email already registered'), { status: 409 });
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
+  const agreementAt = agreementAccepted ? new Date() : null;
   const { rows } = await db.query(
-    `INSERT INTO users (email, password_hash)
-     VALUES ($1, $2)
+    `INSERT INTO users (email, password_hash, agreement_accepted_at)
+     VALUES ($1, $2, $3)
      RETURNING id, email, balance, is_admin, created_at`,
-    [email, passwordHash]
+    [email, passwordHash, agreementAt]
   );
   return rows[0];
 }

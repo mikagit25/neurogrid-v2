@@ -120,4 +120,19 @@ export interface MarketplaceAdapter {
   // Ad campaign control (dayparting)
   pauseCampaign(externalId: string): Promise<void>;
   resumeCampaign(externalId: string): Promise<void>;
+
+  /** Best-effort fetch of seller/company info for billing profiles */
+  getSellerInfo(): Promise<Partial<SellerInfo>>;
+}
+
+export interface SellerInfo {
+  company_name: string;
+  unp: string;
+  legal_address: string;
+  iban: string;
+  bank_name: string;
+  bic: string;
+  contact_person: string;
+  phone: string;
+  billing_email: string;
 }

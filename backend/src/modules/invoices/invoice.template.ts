@@ -6,6 +6,12 @@ export interface InvoiceData {
   date: string;           // DD.MM.YYYY
   payerEmail: string;
   payerName?: string;
+  payerUnp?: string;
+  payerAddress?: string;
+  payerIban?: string;
+  payerBank?: string;
+  payerBic?: string;
+  payerPhone?: string;
   planName: string;
   months: number;
   amount: number;
@@ -90,7 +96,10 @@ export function renderInvoiceHtml(data: InvoiceData): string {
 
   <div class="meta">
     <div class="meta-row"><span class="meta-label">Поставщик:</span><span>${COMPANY.name}, УНП ${COMPANY.unp}</span></div>
-    <div class="meta-row"><span class="meta-label">Плательщик:</span><span>${data.payerName || data.payerEmail}</span></div>
+    <div class="meta-row"><span class="meta-label">Плательщик:</span><span>${data.payerName || data.payerEmail}${data.payerUnp ? ', УНП ' + data.payerUnp : ''}</span></div>
+    ${data.payerAddress ? `<div class="meta-row"><span class="meta-label">Адрес плательщика:</span><span>${data.payerAddress}</span></div>` : ''}
+    ${data.payerIban ? `<div class="meta-row"><span class="meta-label">IBAN плательщика:</span><span>${data.payerIban}${data.payerBank ? ', ' + data.payerBank : ''}${data.payerBic ? ', БИК ' + data.payerBic : ''}</span></div>` : ''}
+    ${data.payerPhone ? `<div class="meta-row"><span class="meta-label">Телефон:</span><span>${data.payerPhone}</span></div>` : ''}
   </div>
 
   <table>

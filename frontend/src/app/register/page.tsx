@@ -11,6 +11,7 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -35,9 +36,13 @@ export default function RegisterPage() {
       setError('Пароль должен содержать не менее 8 символов');
       return;
     }
+    if (!agreed) {
+      setError('Необходимо принять публичный договор оказания услуг');
+      return;
+    }
     setLoading(true);
     try {
-      await register(email, password);
+      await register(email, password, true);
       // Auto-login after registration
       const data = await login(email, password);
       setToken(data.token);
@@ -127,9 +132,24 @@ export default function RegisterPage() {
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               />
             </div>
+            <div className="flex items-start gap-2.5 pt-1">
+              <input
+                id="agreement"
+                type="checkbox"
+                checked={agreed}
+                onChange={(e) => setAgreed(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer flex-shrink-0"
+              />
+              <label htmlFor="agreement" className="text-sm text-slate-600 cursor-pointer leading-snug">
+                Я ознакомлен(-а) и принимаю условия{' '}
+                <a href="/oferta" target="_blank" className="text-purple-600 hover:text-purple-700 underline">
+                  публичного договора оказания услуг
+                </a>
+              </label>
+            </div>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !agreed}
               className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
             >
               {loading ? 'Регистрация...' : 'Зарегистрироваться'}

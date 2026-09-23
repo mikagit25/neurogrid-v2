@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { MarketplaceAdapter, ProductInfo, CompetitorPrice, ReviewOrQuestion, SalesDay, FinanceSummary, FinanceRecord, WarehouseStock, MarketplaceOrder } from '../base.adapter';
+import { MarketplaceAdapter, SellerInfo, ProductInfo, CompetitorPrice, ReviewOrQuestion, SalesDay, FinanceSummary, FinanceRecord, WarehouseStock, MarketplaceOrder } from '../base.adapter';
 import { withRetry } from '../../../utils/retry';
 
 export interface WbCredentials {
@@ -396,5 +396,21 @@ export class WbAdapter implements MarketplaceAdapter {
       orderId: String(s.orderId),
       barcodeBase64: s.barcodeBase64 ?? '',
     }));
+  }
+
+  async getSellerInfo(): Promise<Partial<SellerInfo>> {
+    try {
+      // WB Seller API: GET /api/v1/config — returns seller configuration including name
+      const resp = await this.contentClient.get('/api/v1/config');
+      const d = resp.data ?? {};
+      return {
+        company_name: d.legalEntityName || d.supplierName || d.name || undefined,
+        phone:        d.phone || undefined,
+        billing_email: d.email || undefined,
+        legal_address: d.legalAddress || d.address || undefined,
+      };
+    } catch {
+      return {};
+    }
   }
 }

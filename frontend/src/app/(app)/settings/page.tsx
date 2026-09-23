@@ -1,11 +1,12 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import {
-  ApiKey, TelegramConnection, TeamMember, TeamInvitation, Webhook,
+  ApiKey, TelegramConnection, TeamMember, TeamInvitation, Webhook, BillingProfile,
   getApiKeys, createApiKey, revokeApiKey,
   getTelegramConnection, generateTelegramToken, updateTelegramSettings, disconnectTelegram,
   getTeamMembers, inviteTeamMember, removeTeamMember, revokeTeamInvitation,
   getWebhooks, createWebhook, updateWebhook, deleteWebhook, testWebhook,
+  getBillingProfile, updateBillingProfile, autofillBillingProfile,
 } from '../../../lib/api';
 
 // ---- API Keys section ----
@@ -564,6 +565,127 @@ function WebhooksSection() {
   );
 }
 
+// ---- Billing Profile section ----
+function BillingProfileSection() {
+  const empty: Partial<BillingProfile> = {
+    company_name: '', unp: '', legal_address: '', iban: '',
+    bank_name: '', bic: '', contact_person: '', phone: '', billing_email: '',
+  };
+  const [form, setForm] = useState<Partial<BillingProfile>>(empty);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [autofilling, setAutofilling] = useState<'wb' | 'ozon' | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { profile } = await getBillingProfile();
+      if (profile) setForm({ ...empty, ...profile });
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  function set(field: keyof BillingProfile, value: string) {
+    setForm(f => ({ ...f, [field]: value }));
+    setSaved(false);
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true); setError(''); setSaved(false);
+    try {
+      await updateBillingProfile(form);
+      setSaved(true);
+    } catch (err: any) { setError(err.message); }
+    finally { setSaving(false); }
+  }
+
+  async function handleAutofill(platform: 'wb' | 'ozon') {
+    setAutofilling(platform); setError('');
+    try {
+      const { profile } = await autofillBillingProfile(platform);
+      setForm(f => ({ ...f, ...Object.fromEntries(Object.entries(profile).filter(([, v]) => v)) }));
+      setSaved(false);
+    } catch (err: any) { setError(err.message || `Не удалось загрузить данные с ${platform.toUpperCase()}`); }
+    finally { setAutofilling(null); }
+  }
+
+  const field = (label: string, key: keyof BillingProfile, placeholder?: string, hint?: string) => (
+    <div key={key}>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <input
+        type={key === 'billing_email' ? 'email' : 'text'}
+        value={(form[key] as string) ?? ''}
+        onChange={e => set(key, e.target.value)}
+        placeholder={placeholder}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+      />
+      {hint && <p className="text-xs text-gray-400 mt-0.5">{hint}</p>}
+    </div>
+  );
+
+  if (loading) return <div className="text-sm text-gray-400 py-4">Загрузка...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900">Реквизиты для документов</h2>
+        <p className="text-sm text-gray-500 mt-0.5">Используются при формировании счётов на оплату и актов выполненных работ</p>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => handleAutofill('ozon')}
+          disabled={!!autofilling}
+          className="flex items-center gap-1.5 px-3 py-1.5 border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg text-sm font-medium disabled:opacity-50 transition-colors"
+        >
+          {autofilling === 'ozon' ? 'Загрузка...' : 'Загрузить с Ozon'}
+        </button>
+        <button
+          onClick={() => handleAutofill('wb')}
+          disabled={!!autofilling}
+          className="flex items-center gap-1.5 px-3 py-1.5 border border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg text-sm font-medium disabled:opacity-50 transition-colors"
+        >
+          {autofilling === 'wb' ? 'Загрузка...' : 'Загрузить с WB'}
+        </button>
+      </div>
+
+      {error && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>}
+      {saved && <div className="p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">Реквизиты сохранены</div>}
+
+      <form onSubmit={handleSave} className="space-y-3">
+        {field('Наименование организации / ИП', 'company_name', 'ООО «Компания» или ИП Иванов И.И.')}
+        {field('УНП / ИНН', 'unp', '490556542')}
+        {field('Юридический адрес', 'legal_address', '220000, г. Минск, ул. Ленина, 1')}
+        {field('IBAN / Расчётный счёт', 'iban', 'BY...')}
+        {field('Банк', 'bank_name', 'ОАО «Белинвестбанк»')}
+        {field('БИК банка', 'bic', 'BLBBBY2X')}
+        {field('Контактное лицо', 'contact_person', 'Иванов Иван Иванович')}
+        {field('Телефон', 'phone', '+375-29-0000000')}
+        {field('Email для документов', 'billing_email', 'buh@company.by', 'Если отличается от email аккаунта')}
+
+        <div className="pt-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            {saving ? 'Сохранение...' : 'Сохранить реквизиты'}
+          </button>
+        </div>
+      </form>
+
+      <p className="text-xs text-gray-400">
+        Данные хранятся только на сервере и используются исключительно для формирования документов.
+      </p>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [tab, setTab] = useState('api-keys');
 
@@ -571,8 +693,8 @@ export default function SettingsPage() {
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Интеграции и настройки</h1>
 
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
-        {[['api-keys', 'API-ключи'], ['webhooks', 'Вебхуки'], ['telegram', 'Telegram'], ['team', 'Команда']].map(([v, l]) => (
+      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit flex-wrap">
+        {[['api-keys', 'API-ключи'], ['webhooks', 'Вебхуки'], ['telegram', 'Telegram'], ['team', 'Команда'], ['billing', 'Реквизиты']].map(([v, l]) => (
           <button key={v} onClick={() => setTab(v)} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{l}</button>
         ))}
       </div>
@@ -582,6 +704,7 @@ export default function SettingsPage() {
         {tab === 'webhooks' && <WebhooksSection />}
         {tab === 'telegram' && <TelegramSection />}
         {tab === 'team' && <TeamSection />}
+        {tab === 'billing' && <BillingProfileSection />}
       </div>
     </div>
   );
