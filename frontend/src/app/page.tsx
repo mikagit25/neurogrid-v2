@@ -535,6 +535,7 @@ export default function LandingPage() {
             <p>© {new Date().getFullYear()} NeuroGrid. Все права защищены.</p>
             <div className="flex gap-4">
               <Link href="/privacy" className="hover:text-white transition-colors">Политика конфиденциальности</Link>
+              <Link href="/oferta"  className="hover:text-white transition-colors">Публичный договор</Link>
               <Link href="/terms"   className="hover:text-white transition-colors">Условия использования</Link>
             </div>
           </div>
