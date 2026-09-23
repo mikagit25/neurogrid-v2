@@ -373,10 +373,12 @@ export default function WarehousePage() {
               {filtered.map((row, i) => (
                 <tr key={i} className="hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-slate-800 truncate max-w-[220px]">
-                      {row.catalog_title || 'Без названия'}
-                    </p>
-                    <p className="text-xs text-slate-400 mt-0.5">{row.sku}</p>
+                    <Link href={`/products/${encodeURIComponent(row.sku)}`} className="group">
+                      <p className="font-medium text-slate-800 group-hover:text-purple-600 truncate max-w-[220px] transition-colors">
+                        {row.catalog_title || 'Без названия'}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-0.5">{row.sku}</p>
+                    </Link>
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-xs font-medium text-slate-600">{PLATFORM_LABELS[row.platform] ?? row.platform}</span>
