@@ -1,7 +1,7 @@
 import { db } from '../../db';
 import { createWebpayForm, verifyWebpaySignature } from '../../integrations/webpay/webpay.client';
 import { config } from '../../config';
-import { creditReferralCommission } from '../referrals/referrals.service';
+import { creditReferralCommission, creditFirstTopupBonus } from '../referrals/referrals.service';
 
 const MIN_TOPUP = 100;
 const MAX_TOPUP = 100_000;
@@ -97,6 +97,7 @@ export async function processWebhook(body: Record<string, string>): Promise<bool
       [orderId],
     );
     await creditReferralCommission(req.user_id, parseFloat(req.amount), client);
+    await creditFirstTopupBonus(req.user_id, parseFloat(req.amount), client);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');

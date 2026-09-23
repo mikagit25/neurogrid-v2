@@ -1,6 +1,7 @@
 import { db } from '../../db';
 
 export const REFERRAL_COMMISSION_PCT = 15;
+export const REFERRED_FIRST_TOPUP_BONUS_PCT = 10;
 
 export async function getReferralStats(userId: string) {
   const [referralsRes, earningsRes, codeRes] = await Promise.all([
@@ -77,6 +78,40 @@ export async function creditReferralCommission(
      VALUES ($1, 'referral', $2)`,
     [referrerId,
      `💰 Реферальный бонус: +${earnedAmount} ₽ — ваш приглашённый пополнил баланс на ${topupAmount} ₽`],
+  );
+}
+
+/** Call this after a successful topup to credit +10% bonus to a referred user on their first topup. */
+export async function creditFirstTopupBonus(
+  userId: string,
+  topupAmount: number,
+  client: any,
+) {
+  // Only for users who registered via a referral link
+  const { rows } = await client.query(
+    `SELECT referred_by FROM users WHERE id = $1 AND referred_by IS NOT NULL`,
+    [userId],
+  );
+  if (!rows.length) return;
+
+  // Only on first topup (the one just inserted makes count = 1)
+  const { rows: txRows } = await client.query(
+    `SELECT COUNT(*)::int AS cnt FROM transactions WHERE user_id = $1 AND type = 'topup'`,
+    [userId],
+  );
+  if (txRows[0]?.cnt !== 1) return;
+
+  const bonus = +((topupAmount * REFERRED_FIRST_TOPUP_BONUS_PCT) / 100).toFixed(2);
+  if (bonus <= 0) return;
+
+  await client.query(`UPDATE users SET balance = balance + $1 WHERE id = $2`, [bonus, userId]);
+  await client.query(
+    `INSERT INTO transactions (user_id, type, amount) VALUES ($1, 'topup', $2)`,
+    [userId, bonus],
+  );
+  await client.query(
+    `INSERT INTO notifications (user_id, type, text) VALUES ($1, 'referral', $2)`,
+    [userId, `🎁 Реферальный бонус: +${bonus} ₽ (${REFERRED_FIRST_TOPUP_BONUS_PCT}% к первому пополнению)`],
   );
 }
 

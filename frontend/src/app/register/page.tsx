@@ -70,7 +70,7 @@ export default function RegisterPage() {
           {refCode && (
             <div className="mb-4 p-3 bg-purple-50 border border-purple-200 text-purple-800 rounded-lg text-sm flex items-center gap-2">
               <span>🎁</span>
-              <span>Вы регистрируетесь по реферальной ссылке</span>
+              <span>Вы регистрируетесь по реферальной ссылке — при первом пополнении получите <strong>+10% бонус</strong> к балансу</span>
             </div>
           )}
 

@@ -804,8 +804,9 @@ function ReferralSection() {
           <p className="text-sm font-medium text-purple-800 mb-2">Как это работает</p>
           <ol className="space-y-1.5 text-sm text-purple-700">
             <li className="flex gap-2"><span className="font-bold">1.</span> Поделитесь ссылкой с другими продавцами маркетплейсов</li>
-            <li className="flex gap-2"><span className="font-bold">2.</span> Когда они зарегистрируются и пополнят баланс — вы получите {stats?.commission_pct ?? 15}%</li>
-            <li className="flex gap-2"><span className="font-bold">3.</span> Бонус зачисляется автоматически и тратится на любые функции NeuroGrid</li>
+            <li className="flex gap-2"><span className="font-bold">2.</span> Ваш приглашённый регистрируется и при первом пополнении получает <strong>+10% бонус</strong> к своему балансу</li>
+            <li className="flex gap-2"><span className="font-bold">3.</span> Вы получаете {stats?.commission_pct ?? 15}% от суммы каждого их пополнения — автоматически</li>
+            <li className="flex gap-2"><span className="font-bold">4.</span> Бонусы тратятся на любые функции NeuroGrid</li>
           </ol>
         </div>
 
