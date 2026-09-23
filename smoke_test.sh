@@ -141,8 +141,51 @@ for path in "/" "/login" "/register" "/oferta" "/privacy" "/terms"; do
   [ "$CODE" = "200" ] && ok "GET $path → 200" || fail "GET $path → $CODE"
 done
 
+# ── Referral program ─────────────────────────────────────────────────────────
+section "REFERRALS"
+R=$(curl -s $API/api/referrals/stats -H "$H")
+echo $R | grep -q '"referral_code"' && ok "get referral stats" || fail "get referral stats: $R"
+REF_CODE=$(echo $R | grep -o '"referral_code":"[^"]*"' | cut -d'"' -f4)
+[ -n "$REF_CODE" ] && ok "referral_code generated (${REF_CODE})" || fail "referral_code missing"
+
+# Admin: create a promo code
+PROMO_CODE="SMOKETEST$$"
+R=$(curl -s -X POST $API/api/admin/promo-codes -H "$AH" -H "Content-Type: application/json" \
+  -d "{\"code\":\"$PROMO_CODE\",\"reward_amount\":50,\"description\":\"Smoke test promo\",\"max_uses\":3}")
+PROMO_ID=$(echo $R | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$PROMO_ID" ] && ok "admin create promo code" || fail "admin create promo code: $R"
+
+# User: list promo codes (admin endpoint)
+curl -s $API/api/admin/promo-codes -H "$AH" | grep -q '"promo_codes"' && ok "admin list promo codes" || fail "admin list promo codes"
+
+# User: apply promo code
+R=$(curl -s -X POST $API/api/referrals/apply-promo -H "$H" -H "Content-Type: application/json" \
+  -d "{\"code\":\"$PROMO_CODE\"}")
+echo $R | grep -q '"reward_amount"' && ok "apply promo code" || fail "apply promo code: $R"
+
+# User: apply same promo code twice (must fail 409)
+R=$(curl -s -o /dev/null -w "%{http_code}" -X POST $API/api/referrals/apply-promo \
+  -H "$H" -H "Content-Type: application/json" -d "{\"code\":\"$PROMO_CODE\"}")
+[ "$R" = "409" ] && ok "double-use promo code rejected (409)" || fail "double-use promo code should return 409, got $R"
+
+# Admin: referrals list
+curl -s $API/api/admin/referrals -H "$AH" | grep -q '"referrals"' && ok "admin referrals list" || fail "admin referrals list"
+
+# Register a new user with the referral code
+REF_EMAIL="smoke_ref_$$@ng.dev"
+R=$(curl -s -X POST $API/api/auth/register -H "Content-Type: application/json" \
+  -d "{\"email\":\"$REF_EMAIL\",\"password\":\"Test1234!\",\"agreement_accepted\":true,\"ref_code\":\"$REF_CODE\"}")
+echo $R | grep -q '"email"' && ok "register with referral code" || fail "register with referral code: $R"
+REF_UID=$(curl -s "$API/api/admin/users?search=smoke_ref_$$" -H "$AH" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 section "CLEANUP"
+# Remove referred test user
+[ -n "$REF_UID" ] && docker exec neurogrid-postgres-1 psql -U neurogrid -d neurogrid -q \
+  -c "DELETE FROM transactions WHERE user_id='$REF_UID'; DELETE FROM notifications WHERE user_id='$REF_UID'; DELETE FROM users WHERE id='$REF_UID';" 2>/dev/null
+# Remove test promo code
+[ -n "$PROMO_ID" ] && docker exec neurogrid-postgres-1 psql -U neurogrid -d neurogrid -q \
+  -c "DELETE FROM promo_code_uses WHERE promo_code_id='$PROMO_ID'; DELETE FROM promo_codes WHERE id='$PROMO_ID';" 2>/dev/null
 [ -n "$TESTUID" ] && docker exec neurogrid-postgres-1 psql -U neurogrid -d neurogrid -q \
   -c "DELETE FROM transactions WHERE user_id='$TESTUID'; DELETE FROM scenario_runs WHERE user_id='$TESTUID'; DELETE FROM notifications WHERE user_id='$TESTUID'; DELETE FROM topup_requests WHERE user_id='$TESTUID'; DELETE FROM users WHERE id='$TESTUID';" 2>/dev/null && ok "cleanup test user" || fail "cleanup test user"
 
