@@ -186,6 +186,7 @@ export default function LandingPage() {
             <a href="#features" className="hover:text-slate-900 transition-colors">Возможности</a>
             <a href="#ai"       className="hover:text-slate-900 transition-colors">AI-советники</a>
             <a href="#pricing"  className="hover:text-slate-900 transition-colors">Тарифы</a>
+            <a href="#contact"  className="hover:text-slate-900 transition-colors">Написать нам</a>
           </div>
           <div className="flex items-center gap-2">
             <Link href="/login" className="text-sm text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors">
