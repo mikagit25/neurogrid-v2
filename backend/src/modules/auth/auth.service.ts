@@ -54,21 +54,49 @@ export interface JwtPayload {
   isAdmin: boolean;
 }
 
-export async function registerUser(email: string, password: string, agreementAccepted?: boolean) {
+export async function registerUser(
+  email: string,
+  password: string,
+  agreementAccepted?: boolean,
+  refCode?: string,
+  promoCode?: string,
+) {
   const existing = await db.query('SELECT id FROM users WHERE email = $1', [email]);
   if (existing.rows.length > 0) {
     throw Object.assign(new Error('Email already registered'), { status: 409 });
   }
 
+  // Resolve referrer
+  let referrerId: string | null = null;
+  if (refCode) {
+    const { rows: refRows } = await db.query(
+      `SELECT id FROM users WHERE upper(referral_code) = upper($1) AND is_demo = false`,
+      [refCode],
+    );
+    if (refRows.length) referrerId = refRows[0].id;
+  }
+
   const passwordHash = await bcrypt.hash(password, 12);
   const agreementAt = agreementAccepted ? new Date() : null;
   const { rows } = await db.query(
-    `INSERT INTO users (email, password_hash, agreement_accepted_at)
-     VALUES ($1, $2, $3)
+    `INSERT INTO users (email, password_hash, agreement_accepted_at, referred_by)
+     VALUES ($1, $2, $3, $4)
      RETURNING id, email, balance, is_admin, created_at`,
-    [email, passwordHash, agreementAt]
+    [email, passwordHash, agreementAt, referrerId],
   );
-  return rows[0];
+  const user = rows[0];
+
+  // Apply promo code if provided
+  if (promoCode) {
+    try {
+      const { applyPromoCode } = await import('../referrals/referrals.service');
+      await applyPromoCode(user.id, promoCode);
+    } catch {
+      // promo errors are non-fatal at registration
+    }
+  }
+
+  return user;
 }
 
 export async function loginUser(email: string, password: string) {

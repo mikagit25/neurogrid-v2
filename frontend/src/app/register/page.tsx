@@ -12,6 +12,8 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [agreed, setAgreed] = useState(false);
+  const [promoCode, setPromoCode] = useState('');
+  const [refCode, setRefCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -23,27 +25,19 @@ export default function RegisterPage() {
     if (sp.get('error') === 'google_failed') {
       setError('Не удалось войти через Google. Попробуйте ещё раз.');
     }
+    if (sp.get('ref')) setRefCode(sp.get('ref')!);
+    if (sp.get('promo')) setPromoCode(sp.get('promo')!);
   }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (password !== confirm) {
-      setError('Пароли не совпадают');
-      return;
-    }
-    if (password.length < 8) {
-      setError('Пароль должен содержать не менее 8 символов');
-      return;
-    }
-    if (!agreed) {
-      setError('Необходимо принять публичный договор оказания услуг');
-      return;
-    }
+    if (password !== confirm) { setError('Пароли не совпадают'); return; }
+    if (password.length < 8) { setError('Пароль должен содержать не менее 8 символов'); return; }
+    if (!agreed) { setError('Необходимо принять публичный договор оказания услуг'); return; }
     setLoading(true);
     try {
-      await register(email, password, true);
-      // Auto-login after registration
+      await register(email, password, true, refCode.trim() || undefined, promoCode.trim() || undefined);
       const data = await login(email, password);
       setToken(data.token);
       setUser({
@@ -70,12 +64,17 @@ export default function RegisterPage() {
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8">
           <h2 className="text-xl font-semibold text-slate-800 mb-6">Создать аккаунт</h2>
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
-              {error}
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>
+          )}
+
+          {refCode && (
+            <div className="mb-4 p-3 bg-purple-50 border border-purple-200 text-purple-800 rounded-lg text-sm flex items-center gap-2">
+              <span>🎁</span>
+              <span>Вы регистрируетесь по реферальной ссылке</span>
             </div>
           )}
 
-          {/* Google OAuth button */}
+          {/* Google OAuth */}
           <a
             href={`${API_URL}/api/auth/google`}
             className="flex items-center justify-center gap-3 w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors mb-4"
@@ -90,76 +89,57 @@ export default function RegisterPage() {
           </a>
 
           <div className="relative my-4">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-200" />
-            </div>
-            <div className="relative flex justify-center">
-              <span className="px-3 bg-white text-xs text-slate-400">или через email</span>
-            </div>
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200" /></div>
+            <div className="relative flex justify-center"><span className="px-3 bg-white text-xs text-slate-400">или через email</span></div>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                required
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Пароль</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Минимум 8 символов"
-                required
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Минимум 8 символов" required
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Подтвердите пароль</label>
-              <input
-                type="password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                placeholder="Повторите пароль"
-                required
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
+              <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="Повторите пароль" required
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
             </div>
+
+            {/* Promo / ref codes */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Промо-код</label>
+                <input type="text" value={promoCode} onChange={e => setPromoCode(e.target.value.toUpperCase())} placeholder="WELCOME500"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Реферальный код</label>
+                <input type="text" value={refCode} onChange={e => setRefCode(e.target.value.toUpperCase())} placeholder="NG-XXXXXXXX"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm" />
+              </div>
+            </div>
+
             <div className="flex items-start gap-2.5 pt-1">
-              <input
-                id="agreement"
-                type="checkbox"
-                checked={agreed}
-                onChange={(e) => setAgreed(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer flex-shrink-0"
-              />
+              <input id="agreement" type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer flex-shrink-0" />
               <label htmlFor="agreement" className="text-sm text-slate-600 cursor-pointer leading-snug">
                 Я ознакомлен(-а) и принимаю условия{' '}
-                <a href="/oferta" target="_blank" className="text-purple-600 hover:text-purple-700 underline">
-                  публичного договора оказания услуг
-                </a>
+                <a href="/oferta" target="_blank" className="text-purple-600 hover:text-purple-700 underline">публичного договора оказания услуг</a>
               </label>
             </div>
-            <button
-              type="submit"
-              disabled={loading || !agreed}
-              className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
-            >
+            <button type="submit" disabled={loading || !agreed}
+              className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors">
               {loading ? 'Регистрация...' : 'Зарегистрироваться'}
             </button>
           </form>
           <p className="mt-4 text-center text-sm text-slate-500">
             Уже есть аккаунт?{' '}
-            <Link href="/login" className="text-purple-600 hover:text-purple-700 font-medium">
-              Войти
-            </Link>
+            <Link href="/login" className="text-purple-600 hover:text-purple-700 font-medium">Войти</Link>
           </p>
         </div>
       </div>

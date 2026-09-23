@@ -21,6 +21,8 @@ const registerSchema = z.object({
   agreement_accepted: z.boolean().refine(v => v === true, {
     message: 'Необходимо принять публичный договор оказания услуг',
   }),
+  ref_code:   z.string().max(20).optional(),
+  promo_code: z.string().max(32).optional(),
 });
 
 // Login schema — no min-length on password so lockout runs before Zod rejects
@@ -37,7 +39,13 @@ authRouter.post('/register', async (req: Request, res: Response) => {
   }
 
   try {
-    const user = await registerUser(parsed.data.email, parsed.data.password, parsed.data.agreement_accepted);
+    const user = await registerUser(
+      parsed.data.email,
+      parsed.data.password,
+      parsed.data.agreement_accepted,
+      parsed.data.ref_code,
+      parsed.data.promo_code,
+    );
     res.status(201).json({ user });
   } catch (err: any) {
     res.status(err.status || 500).json({ error: err.message });

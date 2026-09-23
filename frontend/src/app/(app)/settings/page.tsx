@@ -2,11 +2,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   ApiKey, TelegramConnection, TeamMember, TeamInvitation, Webhook, BillingProfile,
+  ReferralStats,
   getApiKeys, createApiKey, revokeApiKey,
   getTelegramConnection, generateTelegramToken, updateTelegramSettings, disconnectTelegram,
   getTeamMembers, inviteTeamMember, removeTeamMember, revokeTeamInvitation,
   getWebhooks, createWebhook, updateWebhook, deleteWebhook, testWebhook,
   getBillingProfile, updateBillingProfile, autofillBillingProfile,
+  getReferralStats, applyPromoCode,
 } from '../../../lib/api';
 
 // ---- API Keys section ----
@@ -686,6 +688,149 @@ function BillingProfileSection() {
   );
 }
 
+// ── Referral & Promo section ──────────────────────────────────────────────────
+function ReferralSection() {
+  const [stats, setStats] = useState<ReferralStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [promoInput, setPromoInput] = useState('');
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoMsg, setPromoMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    getReferralStats().then(setStats).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  const referralUrl = stats
+    ? `${typeof window !== 'undefined' ? window.location.origin : 'https://neurogrid.network'}/register?ref=${stats.referral_code}`
+    : '';
+
+  async function handleCopy() {
+    await navigator.clipboard.writeText(referralUrl).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleApplyPromo(e: React.FormEvent) {
+    e.preventDefault();
+    if (!promoInput.trim()) return;
+    setPromoLoading(true);
+    setPromoMsg(null);
+    try {
+      const res = await applyPromoCode(promoInput.trim().toUpperCase());
+      setPromoMsg({ ok: true, text: `Промо-код активирован! Начислено +${res.reward_amount} ₽` });
+      setPromoInput('');
+      const fresh = await getReferralStats();
+      setStats(fresh);
+    } catch (err: any) {
+      setPromoMsg({ ok: false, text: err.message ?? 'Ошибка' });
+    } finally {
+      setPromoLoading(false);
+    }
+  }
+
+  if (loading) return <div className="flex justify-center py-12"><div className="w-6 h-6 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" /></div>;
+
+  return (
+    <div className="space-y-6">
+      {/* Promo code */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <h2 className="text-lg font-semibold text-slate-900 mb-1">Активировать промо-код</h2>
+        <p className="text-sm text-slate-500 mb-4">Если у вас есть промо-код от NeuroGrid — введите его и получите баланс на счёт.</p>
+        <form onSubmit={handleApplyPromo} className="flex gap-2">
+          <input
+            type="text"
+            value={promoInput}
+            onChange={e => setPromoInput(e.target.value.toUpperCase())}
+            placeholder="WELCOME990"
+            maxLength={32}
+            className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+          />
+          <button
+            type="submit"
+            disabled={promoLoading || !promoInput.trim()}
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            {promoLoading ? 'Проверка...' : 'Активировать'}
+          </button>
+        </form>
+        {promoMsg && (
+          <p className={`mt-2 text-sm ${promoMsg.ok ? 'text-green-600' : 'text-red-600'}`}>{promoMsg.text}</p>
+        )}
+      </div>
+
+      {/* Referral program */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-5">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900 mb-1">Реферальная программа</h2>
+          <p className="text-sm text-slate-500">Приглашайте продавцов и получайте <strong>{stats?.commission_pct ?? 15}%</strong> от каждого пополнения их баланса — зачисляется сразу на ваш счёт.</p>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            { label: 'Приглашено', value: stats?.referred_count ?? 0 },
+            { label: 'Заработано, ₽', value: (stats?.total_earned ?? 0).toLocaleString('ru-RU') },
+            { label: 'Комиссия', value: `${stats?.commission_pct ?? 15}%` },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-slate-50 rounded-lg p-4 text-center">
+              <p className="text-2xl font-bold text-slate-900">{value}</p>
+              <p className="text-xs text-slate-500 mt-1">{label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Referral link */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">Ваша реферальная ссылка</label>
+          <div className="flex gap-2">
+            <input
+              readOnly
+              value={referralUrl}
+              className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 font-mono"
+            />
+            <button
+              onClick={handleCopy}
+              className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition-colors"
+            >
+              {copied ? '✓ Скопировано' : 'Копировать'}
+            </button>
+          </div>
+          <p className="text-xs text-slate-400 mt-1.5">Код: <span className="font-mono font-semibold">{stats?.referral_code}</span></p>
+        </div>
+
+        {/* How it works */}
+        <div className="bg-purple-50 rounded-lg p-4">
+          <p className="text-sm font-medium text-purple-800 mb-2">Как это работает</p>
+          <ol className="space-y-1.5 text-sm text-purple-700">
+            <li className="flex gap-2"><span className="font-bold">1.</span> Поделитесь ссылкой с другими продавцами маркетплейсов</li>
+            <li className="flex gap-2"><span className="font-bold">2.</span> Когда они зарегистрируются и пополнят баланс — вы получите {stats?.commission_pct ?? 15}%</li>
+            <li className="flex gap-2"><span className="font-bold">3.</span> Бонус зачисляется автоматически и тратится на любые функции NeuroGrid</li>
+          </ol>
+        </div>
+
+        {/* Recent earnings */}
+        {stats && stats.recent_earnings.length > 0 && (
+          <div>
+            <p className="text-sm font-medium text-slate-700 mb-3">Последние начисления</p>
+            <div className="space-y-2">
+              {stats.recent_earnings.map((e, i) => (
+                <div key={i} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+                  <div>
+                    <p className="text-sm text-slate-700">{e.referred_email.replace(/(.{2}).+(@.+)/, '$1***$2')}</p>
+                    <p className="text-xs text-slate-400">Пополнение {Number(e.topup_amount).toLocaleString('ru-RU')} ₽ · {new Date(e.created_at).toLocaleDateString('ru-RU')}</p>
+                  </div>
+                  <span className="text-sm font-semibold text-green-600">+{Number(e.earned_amount).toLocaleString('ru-RU')} ₽</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [tab, setTab] = useState('api-keys');
 
@@ -694,17 +839,25 @@ export default function SettingsPage() {
       <h1 className="text-2xl font-bold text-gray-900">Интеграции и настройки</h1>
 
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit flex-wrap">
-        {[['api-keys', 'API-ключи'], ['webhooks', 'Вебхуки'], ['telegram', 'Telegram'], ['team', 'Команда'], ['billing', 'Реквизиты']].map(([v, l]) => (
+        {[
+          ['api-keys', 'API-ключи'],
+          ['webhooks', 'Вебхуки'],
+          ['telegram', 'Telegram'],
+          ['team', 'Команда'],
+          ['billing', 'Реквизиты'],
+          ['referral', '🎁 Реферальная'],
+        ].map(([v, l]) => (
           <button key={v} onClick={() => setTab(v)} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{l}</button>
         ))}
       </div>
 
       <div className="max-w-2xl">
-        {tab === 'api-keys' && <ApiKeysSection />}
-        {tab === 'webhooks' && <WebhooksSection />}
-        {tab === 'telegram' && <TelegramSection />}
-        {tab === 'team' && <TeamSection />}
-        {tab === 'billing' && <BillingProfileSection />}
+        {tab === 'api-keys'  && <ApiKeysSection />}
+        {tab === 'webhooks'  && <WebhooksSection />}
+        {tab === 'telegram'  && <TelegramSection />}
+        {tab === 'team'      && <TeamSection />}
+        {tab === 'billing'   && <BillingProfileSection />}
+        {tab === 'referral'  && <ReferralSection />}
       </div>
     </div>
   );

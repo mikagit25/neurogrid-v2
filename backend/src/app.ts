@@ -49,6 +49,7 @@ import { actsRouter } from './modules/acts/acts.routes';
 import { billingProfileRouter } from './modules/profile/billing.routes';
 import { supportRouter } from './modules/support/support.routes';
 import { supportAdminRouter } from './modules/support/support.admin.routes';
+import { referralsRouter } from './modules/referrals/referrals.routes';
 import { startWorker } from './queue/queue';
 import { processScenarioJob } from './queue/workers/scenario.worker';
 import { startAutomationWorker } from './queue/workers/automation.worker';
@@ -118,6 +119,7 @@ app.use('/api/acts', actsRouter);
 app.use('/api/profile/billing', billingProfileRouter);
 app.use('/api/support', supportRouter);
 app.use('/api/admin/support', supportAdminRouter);
+app.use('/api/referrals', referralsRouter);
 
 // Serve generated images (infographics, AI photos)
 app.use('/images', express.static(path.join(__dirname, '../public/images')));

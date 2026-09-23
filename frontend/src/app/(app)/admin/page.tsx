@@ -9,11 +9,13 @@ import {
   adminGetStats, adminGetInvoices, adminMarkInvoicePaid, adminCancelInvoice, adminPreviewInvoiceHtml,
   adminGetActs, adminGenerateAct, adminPreviewActHtml,
   adminGetSupportTickets, adminGetSupportTicket, adminReplySupportTicket, adminSetSupportStatus,
+  adminGetPromoCodes, adminCreatePromoCode, adminTogglePromoCode, adminDeletePromoCode,
+  adminGetReferrals,
   SUPPORT_TOPICS,
 } from '@/lib/api';
 import type {
   AdminUser, AdminRun, Scenario, AdminStats, AdminInvoice, AdminAct,
-  SupportTicket, SupportReply,
+  SupportTicket, SupportReply, PromoCode,
 } from '@/lib/api';
 import { getUser } from '@/lib/auth';
 
@@ -823,11 +825,187 @@ function SupportTab() {
   );
 }
 
+// ── Promo codes tab ──────────────────────────────────────────────────────────
+function PromoCodesTab({ onMsg }: { onMsg: (m: FeedbackMsg) => void }) {
+  const [codes, setCodes] = useState<PromoCode[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ code: '', description: '', reward_amount: '', max_uses: '', expires_at: '' });
+  const [creating, setCreating] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setCodes((await adminGetPromoCodes()).promo_codes); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.code || !form.reward_amount) return;
+    setCreating(true);
+    try {
+      await adminCreatePromoCode({
+        code: form.code.toUpperCase(),
+        description: form.description || undefined,
+        reward_amount: parseFloat(form.reward_amount),
+        max_uses: form.max_uses ? parseInt(form.max_uses) : undefined,
+        expires_at: form.expires_at || undefined,
+      });
+      setForm({ code: '', description: '', reward_amount: '', max_uses: '', expires_at: '' });
+      onMsg({ type: 'ok', text: 'Промо-код создан' });
+      await load();
+    } catch (err: any) { onMsg({ type: 'err', text: err.message }); }
+    finally { setCreating(false); }
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Create form */}
+      <div className="bg-slate-50 rounded-xl border border-slate-200 p-5">
+        <h3 className="font-semibold text-slate-800 mb-4">Создать промо-код</h3>
+        <form onSubmit={handleCreate} className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-slate-500 mb-1 block">Код *</label>
+            <input value={form.code} onChange={e => setForm(p => ({ ...p, code: e.target.value.toUpperCase() }))}
+              placeholder="WELCOME990" maxLength={32} required
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 mb-1 block">Баланс, ₽ *</label>
+            <input type="number" value={form.reward_amount} onChange={e => setForm(p => ({ ...p, reward_amount: e.target.value }))}
+              placeholder="990" min="1" required
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
+          </div>
+          <div className="col-span-2">
+            <label className="text-xs text-slate-500 mb-1 block">Описание</label>
+            <input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
+              placeholder="Велком-бонус для новых клиентов"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 mb-1 block">Макс. использований</label>
+            <input type="number" value={form.max_uses} onChange={e => setForm(p => ({ ...p, max_uses: e.target.value }))}
+              placeholder="∞ (без лимита)" min="1"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 mb-1 block">Действителен до</label>
+            <input type="date" value={form.expires_at} onChange={e => setForm(p => ({ ...p, expires_at: e.target.value }))}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
+          </div>
+          <div className="col-span-2 flex justify-end">
+            <button type="submit" disabled={creating}
+              className="px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors">
+              {creating ? 'Создание...' : 'Создать промо-код'}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        {loading ? (
+          <div className="flex justify-center py-10"><div className="w-6 h-6 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" /></div>
+        ) : codes.length === 0 ? (
+          <p className="text-center py-10 text-slate-400 text-sm">Нет промо-кодов</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-100">
+                <th className="px-4 py-3 text-left text-xs text-slate-500 font-medium">Код</th>
+                <th className="px-4 py-3 text-left text-xs text-slate-500 font-medium">Описание</th>
+                <th className="px-4 py-3 text-right text-xs text-slate-500 font-medium">Бонус</th>
+                <th className="px-4 py-3 text-center text-xs text-slate-500 font-medium">Использований</th>
+                <th className="px-4 py-3 text-center text-xs text-slate-500 font-medium">Статус</th>
+                <th className="px-4 py-3 text-center text-xs text-slate-500 font-medium">До</th>
+                <th className="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {codes.map(c => (
+                <tr key={c.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 font-mono font-semibold text-purple-700">{c.code}</td>
+                  <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate">{c.description ?? '—'}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-green-600">+{Number(c.reward_amount).toLocaleString('ru-RU')} ₽</td>
+                  <td className="px-4 py-3 text-center text-slate-600">{c.used_count}{c.max_uses ? `/${c.max_uses}` : ''}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${c.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                      {c.is_active ? 'Активен' : 'Отключён'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-center text-slate-500 text-xs">
+                    {c.expires_at ? new Date(c.expires_at).toLocaleDateString('ru-RU') : '∞'}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <button onClick={async () => { await adminTogglePromoCode(c.id, !c.is_active); await load(); }}
+                        className="text-xs px-2 py-1 border border-slate-200 rounded hover:bg-slate-50 transition-colors">
+                        {c.is_active ? 'Откл.' : 'Вкл.'}
+                      </button>
+                      <button onClick={async () => { if (!confirm('Удалить?')) return; await adminDeletePromoCode(c.id); onMsg({ type: 'ok', text: 'Удалён' }); await load(); }}
+                        className="text-xs px-2 py-1 border border-red-200 text-red-600 rounded hover:bg-red-50 transition-colors">
+                        Удалить
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Referrals tab ─────────────────────────────────────────────────────────────
+function ReferralsTab() {
+  const [referrals, setReferrals] = useState<{ referrer_email: string; referral_code: string; referred_count: number; total_earned: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    adminGetReferrals().then(d => setReferrals(d.referrals)).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="p-6">
+      <h3 className="font-semibold text-slate-800 mb-4">Активные рефереры</h3>
+      {loading ? (
+        <div className="flex justify-center py-10"><div className="w-6 h-6 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" /></div>
+      ) : referrals.length === 0 ? (
+        <p className="text-center py-10 text-slate-400 text-sm">Нет активных рефереров</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-100">
+              <th className="px-4 py-3 text-left text-xs text-slate-500 font-medium">Email</th>
+              <th className="px-4 py-3 text-left text-xs text-slate-500 font-medium">Реф. код</th>
+              <th className="px-4 py-3 text-right text-xs text-slate-500 font-medium">Приглашено</th>
+              <th className="px-4 py-3 text-right text-xs text-slate-500 font-medium">Заработано</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {referrals.map((r, i) => (
+              <tr key={i} className="hover:bg-slate-50">
+                <td className="px-4 py-3 text-slate-700">{r.referrer_email}</td>
+                <td className="px-4 py-3 font-mono text-purple-700 text-xs">{r.referral_code}</td>
+                <td className="px-4 py-3 text-right font-semibold">{r.referred_count}</td>
+                <td className="px-4 py-3 text-right font-semibold text-green-600">{Number(r.total_earned).toLocaleString('ru-RU')} ₽</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 // ============================================================
 // PAGE
 // ============================================================
 
-type TabKey = 'stats' | 'users' | 'runs' | 'scenarios' | 'invoices' | 'acts' | 'support';
+type TabKey = 'stats' | 'users' | 'runs' | 'scenarios' | 'invoices' | 'acts' | 'support' | 'promo' | 'referrals';
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'stats',     label: 'Метрики' },
@@ -837,6 +1015,8 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'invoices',  label: 'Счета' },
   { key: 'acts',      label: 'Акты' },
   { key: 'support',   label: 'Обращения' },
+  { key: 'promo',     label: '🎁 Промо-коды' },
+  { key: 'referrals', label: '👥 Рефералы' },
 ];
 
 export default function AdminPage() {
@@ -880,13 +1060,15 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {tab === 'stats'     && <StatsTab />}
-        {tab === 'users'     && <UsersTab onMsg={setMsg} />}
-        {tab === 'runs'      && <RunsTab onMsg={setMsg} />}
-        {tab === 'scenarios' && <ScenariosTab onMsg={setMsg} />}
-        {tab === 'invoices'  && <InvoicesTab onMsg={setMsg} />}
-        {tab === 'acts'      && <ActsTab onMsg={setMsg} />}
-        {tab === 'support'   && <SupportTab />}
+        {tab === 'stats'      && <StatsTab />}
+        {tab === 'users'      && <UsersTab onMsg={setMsg} />}
+        {tab === 'runs'       && <RunsTab onMsg={setMsg} />}
+        {tab === 'scenarios'  && <ScenariosTab onMsg={setMsg} />}
+        {tab === 'invoices'   && <InvoicesTab onMsg={setMsg} />}
+        {tab === 'acts'       && <ActsTab onMsg={setMsg} />}
+        {tab === 'support'    && <SupportTab />}
+        {tab === 'promo'      && <PromoCodesTab onMsg={setMsg} />}
+        {tab === 'referrals'  && <ReferralsTab />}
       </div>
     </div>
   );

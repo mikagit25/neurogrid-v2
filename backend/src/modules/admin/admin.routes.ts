@@ -294,3 +294,76 @@ adminRouter.post('/acts/generate', async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ── Promo codes management ─────────────────────────────────────────────────────
+adminRouter.get('/promo-codes', async (_req: Request, res: Response) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, code, description, reward_type, reward_amount, max_uses, used_count,
+              is_active, expires_at, created_at
+       FROM promo_codes ORDER BY created_at DESC`,
+    );
+    res.json({ promo_codes: rows });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+const promoCreateSchema = z.object({
+  code:          z.string().min(3).max(32).toUpperCase(),
+  description:   z.string().max(200).optional(),
+  reward_amount: z.number().min(1).max(100000),
+  max_uses:      z.number().int().min(1).optional(),
+  expires_at:    z.string().optional(),
+});
+
+adminRouter.post('/promo-codes', async (req: Request, res: Response) => {
+  const parsed = promoCreateSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+  const { code, description, reward_amount, max_uses, expires_at } = parsed.data;
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO promo_codes (code, description, reward_amount, max_uses, expires_at)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [code, description ?? null, reward_amount, max_uses ?? null, expires_at ?? null],
+    );
+    res.status(201).json({ ok: true, promo_code: rows[0] });
+  } catch (err: any) {
+    if (err.code === '23505') { res.status(409).json({ error: 'Такой код уже существует' }); return; }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+adminRouter.patch('/promo-codes/:id', async (req: Request, res: Response) => {
+  const schema = z.object({ is_active: z.boolean() });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: 'Invalid' }); return; }
+  try {
+    await db.query(`UPDATE promo_codes SET is_active = $1 WHERE id = $2`, [parsed.data.is_active, req.params.id]);
+    res.json({ ok: true });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+adminRouter.delete('/promo-codes/:id', async (req: Request, res: Response) => {
+  try {
+    await db.query(`DELETE FROM promo_codes WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Referral stats (admin view) ────────────────────────────────────────────────
+adminRouter.get('/referrals', async (_req: Request, res: Response) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT u.email AS referrer_email, u.referral_code,
+              COUNT(r.id)::int AS referred_count,
+              COALESCE(SUM(re.earned_amount),0)::numeric AS total_earned
+       FROM users u
+       LEFT JOIN users r ON r.referred_by = u.id
+       LEFT JOIN referral_earnings re ON re.referrer_id = u.id
+       WHERE u.is_demo = false
+       GROUP BY u.id, u.email, u.referral_code
+       HAVING COUNT(r.id) > 0
+       ORDER BY total_earned DESC LIMIT 100`,
+    );
+    res.json({ referrals: rows });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});

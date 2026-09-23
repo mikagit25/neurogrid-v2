@@ -156,10 +156,22 @@ export interface AdminRun {
 
 // ---- Auth ----
 
-export async function register(email: string, password: string, agreementAccepted = false): Promise<{ user: User }> {
+export async function register(
+  email: string,
+  password: string,
+  agreementAccepted = false,
+  refCode?: string,
+  promoCode?: string,
+): Promise<{ user: User }> {
   const res = await apiFetch('/api/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ email, password, agreement_accepted: agreementAccepted }),
+    body: JSON.stringify({
+      email,
+      password,
+      agreement_accepted: agreementAccepted,
+      ...(refCode   ? { ref_code: refCode }     : {}),
+      ...(promoCode ? { promo_code: promoCode } : {}),
+    }),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -3172,4 +3184,69 @@ export async function adminReplySupportTicket(
 
 export async function adminSetSupportStatus(id: string, status: string): Promise<{ ok: boolean }> {
   return apiRequest(`/api/admin/support/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+}
+
+// ── Referrals & Promo codes ───────────────────────────────────────────────────
+export interface ReferralStats {
+  referral_code: string;
+  referred_count: number;
+  total_earned: number;
+  commission_pct: number;
+  recent_earnings: {
+    earned_amount: number;
+    topup_amount: number;
+    referred_email: string;
+    created_at: string;
+  }[];
+}
+
+export async function getReferralStats(): Promise<ReferralStats> {
+  return apiRequest('/api/referrals/stats');
+}
+
+export async function applyPromoCode(code: string): Promise<{ ok: boolean; reward_amount: number; description?: string }> {
+  return apiRequest('/api/referrals/apply-promo', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  });
+}
+
+// Admin promo codes
+export interface PromoCode {
+  id: string;
+  code: string;
+  description: string | null;
+  reward_type: string;
+  reward_amount: number;
+  max_uses: number | null;
+  used_count: number;
+  is_active: boolean;
+  expires_at: string | null;
+  created_at: string;
+}
+
+export async function adminGetPromoCodes(): Promise<{ promo_codes: PromoCode[] }> {
+  return apiRequest('/api/admin/promo-codes');
+}
+
+export async function adminCreatePromoCode(data: {
+  code: string;
+  description?: string;
+  reward_amount: number;
+  max_uses?: number;
+  expires_at?: string;
+}): Promise<{ ok: boolean; promo_code: PromoCode }> {
+  return apiRequest('/api/admin/promo-codes', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function adminTogglePromoCode(id: string, is_active: boolean): Promise<{ ok: boolean }> {
+  return apiRequest(`/api/admin/promo-codes/${id}`, { method: 'PATCH', body: JSON.stringify({ is_active }) });
+}
+
+export async function adminDeletePromoCode(id: string): Promise<{ ok: boolean }> {
+  return apiRequest(`/api/admin/promo-codes/${id}`, { method: 'DELETE' });
+}
+
+export async function adminGetReferrals(): Promise<{ referrals: { referrer_email: string; referral_code: string; referred_count: number; total_earned: number }[] }> {
+  return apiRequest('/api/admin/referrals');
 }
