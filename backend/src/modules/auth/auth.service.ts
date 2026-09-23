@@ -73,7 +73,7 @@ export async function registerUser(email: string, password: string, agreementAcc
 
 export async function loginUser(email: string, password: string) {
   const { rows } = await db.query(
-    'SELECT id, email, password_hash, balance, is_admin FROM users WHERE email = $1',
+    'SELECT id, email, password_hash, balance, is_admin, is_active FROM users WHERE email = $1',
     [email]
   );
   if (rows.length === 0) {
@@ -81,6 +81,9 @@ export async function loginUser(email: string, password: string) {
   }
 
   const user = rows[0];
+  if (user.is_active === false) {
+    throw Object.assign(new Error('Учётная запись заблокирована'), { status: 403 });
+  }
   if (!user.password_hash) {
     throw Object.assign(new Error('This account uses Google Sign-In'), { status: 401 });
   }
@@ -106,11 +109,14 @@ export async function upsertGoogleUser(profile: { email: string; googleId: strin
 
   // Look up by email first (handles existing email/password accounts linking Google)
   const existing = await db.query(
-    'SELECT id, email, balance, is_admin FROM users WHERE email = $1',
+    'SELECT id, email, balance, is_admin, is_active FROM users WHERE email = $1',
     [email]
   );
   if (existing.rows.length > 0) {
     const user = existing.rows[0];
+    if (user.is_active === false) {
+      throw Object.assign(new Error('Учётная запись заблокирована'), { status: 403 });
+    }
     // Link Google to existing account if not yet linked
     await db.query(
       `UPDATE users SET oauth_provider = 'google', oauth_id = $1

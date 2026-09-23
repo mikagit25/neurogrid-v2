@@ -108,6 +108,39 @@ export interface AdminUser {
   email: string;
   balance: number;
   is_admin: boolean;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface AdminStats {
+  users:    { total: number; new_30d: number };
+  runs:     { total: number; errors: number; last_30d: number };
+  revenue:  { total: string; last_30d: string };
+  tickets:  { open_count: number; total: number };
+  invoices: { pending_count: number };
+}
+
+export interface AdminInvoice {
+  id: string;
+  invoice_number: string;
+  user_email?: string;
+  plan: string;
+  months: number;
+  amount: number;
+  status: 'pending' | 'paid' | 'cancelled';
+  payer_name?: string;
+  notes?: string;
+  created_at: string;
+  paid_at?: string;
+}
+
+export interface AdminAct {
+  id: string;
+  act_number: string;
+  user_email: string;
+  period_from: string;
+  period_to: string;
+  amount: number;
   created_at: string;
 }
 
@@ -625,6 +658,70 @@ export async function adminToggleScenario(
   });
   if (!res.ok) throw new Error('Не удалось обновить сценарий');
   return res.json();
+}
+
+export async function adminGetStats(): Promise<AdminStats> {
+  return apiRequest('/api/admin/stats');
+}
+
+export async function adminSearchUsers(search?: string): Promise<AdminUser[]> {
+  const q = search ? `?search=${encodeURIComponent(search)}` : '';
+  const res = await apiFetch(`/api/admin/users${q}`);
+  if (!res.ok) throw new Error('Не удалось загрузить пользователей');
+  return (await res.json()).users;
+}
+
+export async function adminPatchUser(
+  id: string,
+  data: { is_active?: boolean; is_admin?: boolean },
+): Promise<{ ok: boolean }> {
+  return apiRequest(`/api/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export async function adminEditScenario(
+  id: string,
+  data: { title?: string; description?: string; price?: number },
+): Promise<{ ok: boolean }> {
+  return apiRequest(`/api/admin/scenarios/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+
+export async function adminGetInvoices(status?: string): Promise<{ invoices: AdminInvoice[] }> {
+  const q = status ? `?status=${status}` : '';
+  return apiRequest(`/api/admin/invoices${q}`);
+}
+
+export async function adminMarkInvoicePaid(id: string, notes?: string): Promise<{ ok: boolean }> {
+  return apiRequest(`/api/admin/invoices/${id}/mark-paid`, { method: 'POST', body: JSON.stringify({ notes }) });
+}
+
+export async function adminCancelInvoice(id: string): Promise<{ ok: boolean }> {
+  return apiRequest(`/api/admin/invoices/${id}/cancel`, { method: 'POST' });
+}
+
+export async function adminPreviewInvoiceHtml(id: string): Promise<void> {
+  const res = await apiFetch(`/api/admin/invoices/${id}/html`);
+  if (!res.ok) throw new Error('Не удалось загрузить счёт');
+  const html = await res.text();
+  const blob = new Blob([html], { type: 'text/html' });
+  window.open(URL.createObjectURL(blob), '_blank');
+}
+
+export async function adminGetActs(): Promise<{ acts: AdminAct[] }> {
+  return apiRequest('/api/admin/acts');
+}
+
+export async function adminGenerateAct(
+  user_id: string, year: number, month: number,
+): Promise<{ ok: boolean; act: AdminAct }> {
+  return apiRequest('/api/admin/acts/generate', { method: 'POST', body: JSON.stringify({ user_id, year, month }) });
+}
+
+export async function adminPreviewActHtml(id: string): Promise<void> {
+  const res = await apiFetch(`/api/admin/acts/${id}/html`);
+  if (!res.ok) throw new Error('Не удалось загрузить акт');
+  const html = await res.text();
+  const blob = new Blob([html], { type: 'text/html' });
+  window.open(URL.createObjectURL(blob), '_blank');
 }
 
 // ---- Analytics ----
