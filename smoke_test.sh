@@ -11,7 +11,7 @@ section() { echo ""; echo "=== $1 ==="; }
 section "AUTH"
 
 R=$(curl -s -X POST $API/api/auth/register -H "Content-Type: application/json" \
-  -d '{"email":"smoke_'$$'@ng.dev","password":"Test1234!","agreement_accepted":true}')
+  -d '{"email":"smoke_'$$'@ng.dev","password":"Test1234!","agreement_accepted":true,"pd_transfer_consent":true}')
 echo $R | grep -q '"email"' && ok "register" || fail "register: $R"
 
 R=$(curl -s -X POST $API/api/auth/login -H "Content-Type: application/json" \
@@ -174,7 +174,7 @@ curl -s $API/api/admin/referrals -H "$AH" | grep -q '"referrals"' && ok "admin r
 # Register a new user with the referral code
 REF_EMAIL="smoke_ref_$$@ng.dev"
 R=$(curl -s -X POST $API/api/auth/register -H "Content-Type: application/json" \
-  -d "{\"email\":\"$REF_EMAIL\",\"password\":\"Test1234!\",\"agreement_accepted\":true,\"ref_code\":\"$REF_CODE\"}")
+  -d "{\"email\":\"$REF_EMAIL\",\"password\":\"Test1234!\",\"agreement_accepted\":true,\"pd_transfer_consent\":true,\"ref_code\":\"$REF_CODE\"}")
 echo $R | grep -q '"email"' && ok "register with referral code" || fail "register with referral code: $R"
 REF_UID=$(curl -s "$API/api/admin/users?search=smoke_ref_$$" -H "$AH" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
 

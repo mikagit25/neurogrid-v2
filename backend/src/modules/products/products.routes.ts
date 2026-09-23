@@ -54,6 +54,7 @@ productsRouter.get('/', async (req: Request, res: Response) => {
       const { rows } = await db.query(
         `SELECT
            uc.platform, uc.sku, uc.title, uc.purchase_price,
+           COALESCE(uc.description, '') AS description,
            COALESCE(ss.quantity, 0) AS stock,
            COALESCE(
              (SELECT ROUND(SUM(revenue)::numeric / NULLIF(SUM(quantity), 0), 0)
@@ -80,7 +81,7 @@ productsRouter.get('/', async (req: Request, res: Response) => {
           title: row.title ?? row.sku,
           price: parseFloat(row.price ?? row.purchase_price ?? '0'),
           stock: parseInt(row.stock ?? '0', 10),
-          description: '',
+          description: row.description ?? '',
         };
         const { score, issues } = scoreProduct(p, row.platform);
         allProducts.push({

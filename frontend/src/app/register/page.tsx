@@ -12,6 +12,7 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [agreed, setAgreed] = useState(false);
+  const [pdConsent, setPdConsent] = useState(false);
   const [promoCode, setPromoCode] = useState('');
   const [refCode, setRefCode] = useState('');
   const [error, setError] = useState('');
@@ -35,9 +36,10 @@ export default function RegisterPage() {
     if (password !== confirm) { setError('Пароли не совпадают'); return; }
     if (password.length < 8) { setError('Пароль должен содержать не менее 8 символов'); return; }
     if (!agreed) { setError('Необходимо принять публичный договор оказания услуг'); return; }
+    if (!pdConsent) { setError('Необходимо дать согласие на передачу данных платёжному партнёру'); return; }
     setLoading(true);
     try {
-      await register(email, password, true, refCode.trim() || undefined, promoCode.trim() || undefined);
+      await register(email, password, true, refCode.trim() || undefined, promoCode.trim() || undefined, true);
       const data = await login(email, password);
       setToken(data.token);
       setUser({
@@ -53,6 +55,8 @@ export default function RegisterPage() {
       setLoading(false);
     }
   }
+
+  const canSubmit = agreed && pdConsent && !loading;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
@@ -124,15 +128,30 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            <div className="flex items-start gap-2.5 pt-1">
-              <input id="agreement" type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer flex-shrink-0" />
-              <label htmlFor="agreement" className="text-sm text-slate-600 cursor-pointer leading-snug">
-                Я ознакомлен(-а) и принимаю условия{' '}
-                <a href="/oferta" target="_blank" className="text-purple-600 hover:text-purple-700 underline">публичного договора оказания услуг</a>
-              </label>
+            {/* Consent checkboxes */}
+            <div className="space-y-3 pt-1 border-t border-slate-100">
+              <div className="flex items-start gap-2.5">
+                <input id="agreement" type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer flex-shrink-0" />
+                <label htmlFor="agreement" className="text-sm text-slate-600 cursor-pointer leading-snug">
+                  Я ознакомлен(-а) и принимаю условия{' '}
+                  <a href="/oferta" target="_blank" className="text-purple-600 hover:text-purple-700 underline">публичного договора оказания услуг</a>
+                </label>
+              </div>
+
+              <div className="flex items-start gap-2.5">
+                <input id="pd-consent" type="checkbox" checked={pdConsent} onChange={e => setPdConsent(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer flex-shrink-0" />
+                <label htmlFor="pd-consent" className="text-sm text-slate-600 cursor-pointer leading-snug">
+                  Я согласен(-на) на передачу моих персональных данных (email, имя) платёжному оператору{' '}
+                  <span className="font-medium text-slate-700">WebPay (ОАО «Белинвестбанк»)</span>{' '}
+                  в целях обработки платёжных транзакций в соответствии с Законом РБ «О защите персональных данных» и ФЗ-152 РФ.{' '}
+                  <a href="/privacy#payment-partner" target="_blank" className="text-purple-600 hover:text-purple-700 underline">Подробнее</a>
+                </label>
+              </div>
             </div>
-            <button type="submit" disabled={loading || !agreed}
+
+            <button type="submit" disabled={!canSubmit}
               className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors">
               {loading ? 'Регистрация...' : 'Зарегистрироваться'}
             </button>

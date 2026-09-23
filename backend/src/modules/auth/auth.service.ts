@@ -60,6 +60,7 @@ export async function registerUser(
   agreementAccepted?: boolean,
   refCode?: string,
   promoCode?: string,
+  pdTransferConsent?: boolean,
 ) {
   const existing = await db.query('SELECT id FROM users WHERE email = $1', [email]);
   if (existing.rows.length > 0) {
@@ -78,11 +79,12 @@ export async function registerUser(
 
   const passwordHash = await bcrypt.hash(password, 12);
   const agreementAt = agreementAccepted ? new Date() : null;
+  const pdConsentAt = pdTransferConsent ? new Date() : null;
   const { rows } = await db.query(
-    `INSERT INTO users (email, password_hash, agreement_accepted_at, referred_by)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO users (email, password_hash, agreement_accepted_at, referred_by, pd_transfer_consent_at)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING id, email, balance, is_admin, created_at`,
-    [email, passwordHash, agreementAt, referrerId],
+    [email, passwordHash, agreementAt, referrerId, pdConsentAt],
   );
   const user = rows[0];
 

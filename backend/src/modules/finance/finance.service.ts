@@ -93,12 +93,18 @@ export async function getFinanceSummary(
 
   return rows.map((r: any) => {
     const revenue = Number(r.revenue);
+    const commission = Number(r.commission);
+    const logistics = Number(r.logistics);
+    const penalty = Number(r.penalty);
     const netPayout = Number(r.net_payout);
     const costOfGoods = Number(r.cost_of_goods);
     const grossProfit = netPayout - costOfGoods;
     return {
       ...r,
       revenue,
+      commission,
+      logistics,
+      penalty,
       net_payout: netPayout,
       cost_of_goods: costOfGoods,
       gross_profit: grossProfit,
@@ -138,5 +144,14 @@ export async function getFinanceRecords(
      ORDER BY fr.revenue DESC`,
     sku ? [userId, dateFrom, dateTo, sku] : [userId, dateFrom, dateTo],
   );
-  return rows;
+  return rows.map((r: any) => ({
+    ...r,
+    revenue: Number(r.revenue),
+    commission: Number(r.commission),
+    logistics: Number(r.logistics),
+    penalty: Number(r.penalty),
+    net_payout: Number(r.net_payout),
+    purchase_price: r.purchase_price != null ? Number(r.purchase_price) : null,
+    gross_profit: r.gross_profit != null ? Number(r.gross_profit) : null,
+  }));
 }

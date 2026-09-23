@@ -162,6 +162,7 @@ export async function register(
   agreementAccepted = false,
   refCode?: string,
   promoCode?: string,
+  pdTransferConsent = false,
 ): Promise<{ user: User }> {
   const res = await apiFetch('/api/auth/register', {
     method: 'POST',
@@ -169,6 +170,7 @@ export async function register(
       email,
       password,
       agreement_accepted: agreementAccepted,
+      pd_transfer_consent: pdTransferConsent,
       ...(refCode   ? { ref_code: refCode }     : {}),
       ...(promoCode ? { promo_code: promoCode } : {}),
     }),

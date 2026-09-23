@@ -21,6 +21,9 @@ const registerSchema = z.object({
   agreement_accepted: z.boolean().refine(v => v === true, {
     message: 'Необходимо принять публичный договор оказания услуг',
   }),
+  pd_transfer_consent: z.boolean().refine(v => v === true, {
+    message: 'Необходимо дать согласие на передачу данных платёжному партнёру',
+  }),
   ref_code:   z.string().max(20).optional(),
   promo_code: z.string().max(32).optional(),
 });
@@ -45,6 +48,7 @@ authRouter.post('/register', async (req: Request, res: Response) => {
       parsed.data.agreement_accepted,
       parsed.data.ref_code,
       parsed.data.promo_code,
+      parsed.data.pd_transfer_consent,
     );
     res.status(201).json({ user });
   } catch (err: any) {
