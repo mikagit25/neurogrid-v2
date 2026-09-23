@@ -3004,3 +3004,75 @@ export async function updateBillingProfile(data: Partial<BillingProfile>): Promi
 export async function autofillBillingProfile(platform: 'wb' | 'ozon'): Promise<{ profile: Partial<BillingProfile> }> {
   return apiRequest(`/api/profile/billing/autofill/${platform}`);
 }
+
+// ---- Support tickets ----
+
+export interface SupportTicket {
+  id: string;
+  topic: string;
+  subject: string;
+  message?: string;
+  status: 'open' | 'replied' | 'closed';
+  created_at: string;
+  updated_at: string;
+  reply_count?: number;
+  user_email?: string;
+  guest_email?: string;
+}
+
+export interface SupportReply {
+  id: string;
+  is_admin: boolean;
+  message: string;
+  created_at: string;
+  author_email?: string;
+}
+
+export const SUPPORT_TOPICS: { value: string; label: string }[] = [
+  { value: 'tech',      label: 'Техническая проблема' },
+  { value: 'billing',   label: 'Вопрос по оплате / тарифу' },
+  { value: 'feature',   label: 'Предложение по улучшению' },
+  { value: 'complaint', label: 'Жалоба' },
+  { value: 'other',     label: 'Другое' },
+];
+
+export async function createSupportTicket(data: {
+  topic: string; subject: string; message: string; email?: string;
+}): Promise<{ ticket: SupportTicket }> {
+  return apiRequest('/api/support', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function getSupportTickets(): Promise<{ tickets: SupportTicket[] }> {
+  return apiRequest('/api/support');
+}
+
+export async function getSupportTicket(id: string): Promise<{ ticket: SupportTicket; replies: SupportReply[] }> {
+  return apiRequest(`/api/support/${id}`);
+}
+
+export async function replySupportTicket(id: string, message: string): Promise<{ ok: boolean }> {
+  return apiRequest(`/api/support/${id}/reply`, { method: 'POST', body: JSON.stringify({ message }) });
+}
+
+// Admin
+export async function adminGetSupportTickets(status?: string): Promise<{ tickets: SupportTicket[] }> {
+  const q = status ? `?status=${status}` : '';
+  return apiRequest(`/api/admin/support${q}`);
+}
+
+export async function adminGetSupportTicket(id: string): Promise<{ ticket: SupportTicket; replies: SupportReply[] }> {
+  return apiRequest(`/api/admin/support/${id}`);
+}
+
+export async function adminReplySupportTicket(
+  id: string, message: string, new_status = 'replied',
+): Promise<{ ok: boolean }> {
+  return apiRequest(`/api/admin/support/${id}/reply`, {
+    method: 'POST',
+    body: JSON.stringify({ message, new_status }),
+  });
+}
+
+export async function adminSetSupportStatus(id: string, status: string): Promise<{ ok: boolean }> {
+  return apiRequest(`/api/admin/support/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+}

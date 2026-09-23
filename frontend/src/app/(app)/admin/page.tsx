@@ -9,9 +9,22 @@ import {
   adminRetryRun,
   adminAdjustBalance,
   adminToggleScenario,
+  adminGetSupportTickets,
+  adminGetSupportTicket,
+  adminReplySupportTicket,
+  adminSetSupportStatus,
+  SUPPORT_TOPICS,
 } from '@/lib/api';
-import type { AdminUser, AdminRun, Scenario } from '@/lib/api';
+import type { AdminUser, AdminRun, Scenario, SupportTicket, SupportReply } from '@/lib/api';
 import { getUser } from '@/lib/auth';
+
+const TOPIC_LABEL: Record<string, string> = Object.fromEntries(SUPPORT_TOPICS.map(t => [t.value, t.label]));
+const TICKET_STATUS_LABEL: Record<string, string> = { open: 'Открыто', replied: 'Отвечено', closed: 'Закрыто' };
+const TICKET_STATUS_CLASS: Record<string, string> = {
+  open:    'bg-amber-100 text-amber-700',
+  replied: 'bg-blue-100 text-blue-700',
+  closed:  'bg-gray-100 text-gray-500',
+};
 
 const STATUS_LABELS: Record<string, string> = {
   queued: 'В очереди',
@@ -37,9 +50,183 @@ function formatDate(dateStr: string) {
   });
 }
 
+// ---- Support admin section ----
+function SupportAdminSection() {
+  const [tickets, setTickets]       = useState<SupportTicket[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [statusFilter, setFilter]   = useState('');
+  const [selected, setSelected]     = useState<{ ticket: SupportTicket; replies: SupportReply[] } | null>(null);
+  const [replyText, setReplyText]   = useState('');
+  const [replying, setReplying]     = useState(false);
+  const [newStatus, setNewStatus]   = useState<'open' | 'replied' | 'closed'>('replied');
+  const [actionMsg, setActionMsg]   = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setTickets((await adminGetSupportTickets(statusFilter || undefined)).tickets); }
+    catch { setTickets([]); }
+    finally { setLoading(false); }
+  }, [statusFilter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function openTicket(id: string) {
+    const data = await adminGetSupportTicket(id);
+    setSelected(data);
+    setNewStatus('replied');
+    setReplyText('');
+    setActionMsg('');
+  }
+
+  async function handleReply(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selected) return;
+    setReplying(true); setActionMsg('');
+    try {
+      await adminReplySupportTicket(selected.ticket.id, replyText, newStatus);
+      setActionMsg('Ответ отправлен');
+      const data = await adminGetSupportTicket(selected.ticket.id);
+      setSelected(data);
+      setReplyText('');
+      load();
+    } catch (err: any) { setActionMsg(err.message); }
+    finally { setReplying(false); }
+  }
+
+  async function handleStatus(status: string) {
+    if (!selected) return;
+    await adminSetSupportStatus(selected.ticket.id, status);
+    const data = await adminGetSupportTicket(selected.ticket.id);
+    setSelected(data);
+    load();
+  }
+
+  const openCount = tickets.filter(t => t.status === 'open').length;
+
+  return (
+    <div className="flex gap-4 h-[70vh]">
+      {/* Ticket list */}
+      <div className="w-80 flex-shrink-0 bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden">
+        <div className="p-3 border-b border-slate-100">
+          <select
+            value={statusFilter}
+            onChange={e => setFilter(e.target.value)}
+            className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm"
+          >
+            <option value="">Все ({tickets.length})</option>
+            <option value="open">Открытые {openCount > 0 ? `(${openCount})` : ''}</option>
+            <option value="replied">Отвеченные</option>
+            <option value="closed">Закрытые</option>
+          </select>
+        </div>
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-50">
+          {loading && <p className="text-xs text-slate-400 p-4 text-center">Загрузка...</p>}
+          {!loading && tickets.length === 0 && <p className="text-xs text-slate-400 p-4 text-center">Нет обращений</p>}
+          {tickets.map(t => (
+            <button
+              key={t.id}
+              onClick={() => openTicket(t.id)}
+              className={`w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors ${selected?.ticket.id === t.id ? 'bg-purple-50' : ''}`}
+            >
+              <div className="flex items-center justify-between gap-2 mb-0.5">
+                <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${TICKET_STATUS_CLASS[t.status]}`}>
+                  {TICKET_STATUS_LABEL[t.status]}
+                </span>
+                <span className="text-xs text-slate-400">{new Date(t.updated_at).toLocaleDateString('ru-RU')}</span>
+              </div>
+              <p className="text-sm font-medium text-slate-800 truncate">{t.subject}</p>
+              <p className="text-xs text-slate-400 truncate">{t.user_email || t.guest_email} · {TOPIC_LABEL[t.topic]}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Ticket detail */}
+      {!selected ? (
+        <div className="flex-1 flex items-center justify-center text-slate-300 text-sm">
+          Выберите обращение
+        </div>
+      ) : (
+        <div className="flex-1 bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden">
+          {/* Header */}
+          <div className="p-4 border-b border-slate-100 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs text-slate-400">{TOPIC_LABEL[selected.ticket.topic]} · {selected.ticket.user_email || selected.ticket.guest_email}</p>
+              <h3 className="font-semibold text-slate-800 mt-0.5">{selected.ticket.subject}</h3>
+            </div>
+            <div className="flex gap-1 flex-shrink-0">
+              {(['open', 'replied', 'closed'] as const).map(s => (
+                <button key={s} onClick={() => handleStatus(s)}
+                  className={`text-xs px-2 py-1 rounded-lg border transition-colors ${selected.ticket.status === s ? 'bg-purple-600 text-white border-purple-600' : 'border-slate-200 text-slate-500 hover:border-slate-400'}`}>
+                  {TICKET_STATUS_LABEL[s]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Dialog */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {/* Original */}
+            <div className="flex gap-2">
+              <div className="w-7 h-7 rounded-full bg-slate-200 flex-shrink-0 flex items-center justify-center text-xs font-bold text-slate-500">U</div>
+              <div className="flex-1 bg-slate-50 rounded-xl rounded-tl-none px-3 py-2">
+                <p className="text-xs text-slate-400 mb-1">{new Date(selected.ticket.created_at).toLocaleString('ru-RU')}</p>
+                <p className="text-sm text-slate-700 whitespace-pre-wrap">{selected.ticket.message}</p>
+              </div>
+            </div>
+
+            {selected.replies.map(r => (
+              <div key={r.id} className={`flex gap-2 ${r.is_admin ? 'flex-row-reverse' : ''}`}>
+                <div className={`w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold ${r.is_admin ? 'bg-purple-100 text-purple-700' : 'bg-slate-200 text-slate-500'}`}>
+                  {r.is_admin ? 'А' : 'U'}
+                </div>
+                <div className={`flex-1 rounded-xl px-3 py-2 max-w-[85%] ${r.is_admin ? 'bg-purple-50 rounded-tr-none' : 'bg-slate-50 rounded-tl-none'}`}>
+                  <p className="text-xs text-slate-400 mb-1">{new Date(r.created_at).toLocaleString('ru-RU')}{r.is_admin ? ' · Поддержка' : ''}</p>
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{r.message}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Reply form */}
+          <form onSubmit={handleReply} className="p-3 border-t border-slate-100 space-y-2">
+            {actionMsg && <p className="text-xs text-slate-500">{actionMsg}</p>}
+            <textarea
+              value={replyText}
+              onChange={e => setReplyText(e.target.value)}
+              placeholder="Написать ответ пользователю (отправится на email)..."
+              rows={3}
+              required
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+            <div className="flex items-center gap-2">
+              <select
+                value={newStatus}
+                onChange={e => setNewStatus(e.target.value as any)}
+                className="px-2 py-1.5 border border-slate-200 rounded-lg text-sm"
+              >
+                <option value="replied">→ Статус: Отвечено</option>
+                <option value="closed">→ Статус: Закрыто</option>
+                <option value="open">→ Статус: Открыто</option>
+              </select>
+              <button
+                type="submit"
+                disabled={replying || !replyText.trim()}
+                className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                {replying ? 'Отправка...' : 'Ответить'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<'users' | 'runs' | 'scenarios'>('users');
+  const [tab, setTab] = useState<'users' | 'runs' | 'scenarios' | 'support'>('users');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [runs, setRuns] = useState<AdminRun[]>([]);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
@@ -67,9 +254,12 @@ export default function AdminPage() {
       } else if (tab === 'runs') {
         const data = await adminGetRuns(runsStatusFilter || undefined, 100);
         setRuns(data);
-      } else {
+      } else if (tab === 'scenarios') {
         const data = await getScenarios();
         setScenarios(data);
+      } else {
+        setLoading(false);
+        return;
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка загрузки');
@@ -130,6 +320,7 @@ export default function AdminPage() {
     { key: 'users' as const, label: 'Пользователи' },
     { key: 'runs' as const, label: 'Запуски' },
     { key: 'scenarios' as const, label: 'Сценарии' },
+    { key: 'support' as const, label: 'Обращения' },
   ];
 
   return (
@@ -200,6 +391,8 @@ export default function AdminPage() {
           <UsersTable users={users} onAdjustBalance={handleAdjustBalance} />
         ) : tab === 'runs' ? (
           <RunsTable runs={runs} onRetry={handleRetryRun} />
+        ) : tab === 'support' ? (
+          <SupportAdminSection />
         ) : (
           <ScenariosTable scenarios={scenarios} onToggle={handleToggleScenario} />
         )}

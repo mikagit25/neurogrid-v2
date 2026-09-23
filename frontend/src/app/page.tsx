@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { isAuthenticated, setToken, setUser } from '@/lib/auth';
-import { createDemoSession } from '@/lib/api';
+import { createDemoSession, createSupportTicket, SUPPORT_TOPICS } from '@/lib/api';
 
 /* ── Data ──────────────────────────────────────────────────────────────────── */
 
@@ -126,6 +126,26 @@ export default function LandingPage() {
   const router = useRouter();
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoError, setDemoError] = useState('');
+
+  // Contact form state
+  const [contactTopic, setContactTopic]     = useState('other');
+  const [contactSubject, setContactSubject] = useState('');
+  const [contactMessage, setContactMessage] = useState('');
+  const [contactEmail, setContactEmail]     = useState('');
+  const [contactLoading, setContactLoading] = useState(false);
+  const [contactSent, setContactSent]       = useState(false);
+  const [contactError, setContactError]     = useState('');
+
+  async function handleContact(e: React.FormEvent) {
+    e.preventDefault();
+    setContactError(''); setContactLoading(true);
+    try {
+      await createSupportTicket({ topic: contactTopic, subject: contactSubject, message: contactMessage, email: contactEmail });
+      setContactSent(true);
+      setContactSubject(''); setContactMessage(''); setContactEmail('');
+    } catch (err: any) { setContactError(err.message || 'Ошибка отправки'); }
+    finally { setContactLoading(false); }
+  }
 
   async function handleDemo() {
     if (isAuthenticated()) {
@@ -493,6 +513,90 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Contact form ───────────────────────────────────────────────────── */}
+      <section id="contact" className="py-20 bg-white">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6">
+          <div className="text-center mb-10">
+            <h2 className="text-3xl font-bold text-slate-900 mb-3">Свяжитесь с нами</h2>
+            <p className="text-slate-500">Есть вопрос, предложение или нужна помощь? Напишите — ответим в течение рабочего дня.</p>
+          </div>
+
+          {contactSent ? (
+            <div className="bg-green-50 border border-green-200 rounded-2xl p-8 text-center">
+              <div className="text-4xl mb-3">✓</div>
+              <h3 className="text-lg font-semibold text-green-800 mb-1">Сообщение отправлено!</h3>
+              <p className="text-green-700 text-sm">Мы свяжемся с вами по указанному email в ближайшее время.</p>
+              <button onClick={() => setContactSent(false)} className="mt-4 text-sm text-green-600 hover:underline">
+                Отправить ещё одно сообщение
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleContact} className="bg-slate-50 border border-slate-200 rounded-2xl p-8 space-y-5">
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Тема обращения</label>
+                  <select
+                    value={contactTopic}
+                    onChange={e => setContactTopic(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-xl bg-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    {SUPPORT_TOPICS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Ваш email</label>
+                  <input
+                    type="email"
+                    value={contactEmail}
+                    onChange={e => setContactEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    required
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-xl bg-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Краткое описание</label>
+                <input
+                  type="text"
+                  value={contactSubject}
+                  onChange={e => setContactSubject(e.target.value)}
+                  placeholder="О чём хотите написать?"
+                  required
+                  maxLength={200}
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-xl bg-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Сообщение</label>
+                <textarea
+                  value={contactMessage}
+                  onChange={e => setContactMessage(e.target.value)}
+                  placeholder="Опишите ваш вопрос или предложение..."
+                  required
+                  minLength={10}
+                  maxLength={5000}
+                  rows={5}
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-xl bg-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-y"
+                />
+              </div>
+
+              {contactError && <p className="text-red-600 text-sm">{contactError}</p>}
+
+              <button
+                type="submit"
+                disabled={contactLoading}
+                className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-semibold rounded-xl transition-colors"
+              >
+                {contactLoading ? 'Отправка...' : 'Отправить сообщение'}
+              </button>
+            </form>
+          )}
+        </div>
+      </section>
+
       {/* ── Footer ─────────────────────────────────────────────────────────── */}
       <footer className="bg-slate-900 text-slate-400 py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
@@ -528,6 +632,7 @@ export default function LandingPage() {
               <ul className="space-y-2 text-sm">
                 <li><a href="https://t.me/neurogrid_support" className="hover:text-white transition-colors">Telegram поддержка</a></li>
                 <li><a href="mailto:support@neurogrid.network" className="hover:text-white transition-colors">support@neurogrid.network</a></li>
+                <li><a href="#contact" className="hover:text-white transition-colors">Написать нам</a></li>
               </ul>
             </div>
           </div>
