@@ -230,7 +230,7 @@ authRouter.post('/demo', async (req: Request, res: Response) => {
 
   try {
     const demoEmail = `demo_${crypto.randomBytes(8).toString('hex')}@demo.neurogrid`;
-    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     // Create demo user
     const { rows: [user] } = await db.query(
@@ -259,7 +259,7 @@ authRouter.post('/demo', async (req: Request, res: Response) => {
     const token = jwt.sign(
       { userId: user.id, isAdmin: false },
       config.jwt.secret,
-      { expiresIn: '2h' } as jwt.SignOptions,
+      { expiresIn: '24h' } as jwt.SignOptions,
     );
 
     // Rate limit: increment counter, expire after 1 hour
