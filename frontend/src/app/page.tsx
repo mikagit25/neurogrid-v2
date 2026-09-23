@@ -16,18 +16,24 @@ const PLATFORMS = [
 ];
 
 const MODULES = [
-  { icon: '🏭', title: 'Склад FBO/FBS',      desc: 'Остатки со всех складов в одном окне. AI анализирует излишки, дефицит и дисбаланс FBO/FBS.' },
+  { icon: '💬', title: 'AI-ассистент',        desc: 'Чат с AI по вашим данным: задайте вопрос по складу, продажам или конкурентам — получите ответ с цифрами.' },
+  { icon: '🏭', title: 'Склад FBO/FBS',       desc: 'Остатки со всех складов в одном окне. AI анализирует излишки, дефицит и дисбаланс FBO/FBS.' },
   { icon: '💰', title: 'Финансы и P&L',       desc: 'Реальная маржа с учётом комиссий, логистики, штрафов и закупочной цены. AI советник по прибыльности.' },
   { icon: '📦', title: 'Заказы',              desc: 'Все заказы WB и Ozon в одном интерфейсе. AI советник выявляет узкие места и экстренные задачи.' },
   { icon: '📊', title: 'Реклама',             desc: 'Синхронизация кампаний, дейпартинг, AI-биддер. Умная оптимизация ставок по целевому DRR.' },
   { icon: '📈', title: 'Аналитика продаж',    desc: 'Тренды, топ SKU, конверсии по площадкам. AI-дайджест ежедневно в Telegram или на email.' },
   { icon: '🔔', title: 'Алерты',              desc: 'Алерты на остатки, P&L, возвраты, позиции. AI настройщик подскажет оптимальные пороги.' },
   { icon: '💱', title: 'Калькулятор юнит-экономики', desc: 'Считайте маржу, ROI, точку безубыточности. AI оценщик даёт вердикт и план оптимизации.' },
+  { icon: '🚀', title: 'Автопилот цен',       desc: 'Правила автоматического переоценки по конкурентам, позиции и рентабельности. AI рекомендует настройки.' },
+  { icon: '📋', title: 'AI-отчёты',           desc: 'Еженедельные и ежемесячные отчёты по продажам, рекламе и P&L — формируются AI автоматически.' },
+  { icon: '🎯', title: 'Акции и промо',       desc: 'Планирование промо-событий WB и Ozon. Календарь акций, расчёт ROI и управление участием.' },
+  { icon: '🚚', title: 'Поставки',            desc: 'Планирование отгрузок с учётом динамики продаж, сезонности и сроков доставки на склады.' },
   { icon: '🔄', title: 'Возвраты',            desc: 'Учёт и анализ возвратов по SKU. Причины, тренды, рекомендации по улучшению товаров.' },
   { icon: '🔗', title: 'Автоматизации',       desc: 'Готовые сценарии запускаются по расписанию. AI диагностика выявляет сбои и проблемы.' },
   { icon: '⭐', title: 'Отзывы',              desc: 'Все отзывы в одном месте. AI генерирует персонализированные ответы за 5 секунд.' },
   { icon: '🔍', title: 'SEO и конкуренты',    desc: 'Аудит карточек, анализ ключевых слов, мониторинг позиций и цен конкурентов.' },
-  { icon: '🤖', title: '9 AI-сценариев',      desc: 'Карточки, фото, инфографика, SEO-аудит, анализ ниши, прогноз остатков — на-одном-клике.' },
+  { icon: '📲', title: 'Telegram-уведомления', desc: 'Мгновенные уведомления об алертах, заказах и изменениях прямо в Telegram. Настройте за 2 минуты.' },
+  { icon: '📤', title: 'Экспорт данных',      desc: 'Выгрузка заказов, остатков, финансов и отчётов в Excel/CSV для учётных систем или акционеров.' },
 ];
 
 const AI_ADVISORS = [
@@ -43,6 +49,8 @@ const AI_ADVISORS = [
   { module: 'Отзывы',        name: 'AI Ответы на отзывы',       desc: 'Генерирует контекстуальные ответы под тон и проблему каждого отзыва.' },
   { module: 'Финансы',       name: 'AI Рекомендации P&L',       desc: 'Сравнивает прибыльность SKU, предупреждает о убыточных товарах.' },
   { module: 'Dashboard',     name: 'AI Дашборд',                desc: 'Персональные рекомендации каждое утро: что сделать прямо сейчас для роста.' },
+  { module: 'Автопилот',    name: 'AI Переоценка',             desc: 'Анализирует конкурентов и маржу, предлагает оптимальные правила автопилота для каждого SKU.' },
+  { module: 'Поставки',     name: 'AI Прогноз поставок',       desc: 'Рассчитывает оптимальный объём и дату отгрузки с учётом скорости продаж и сезонности.' },
 ];
 
 const SCENARIOS = [
@@ -68,10 +76,11 @@ const PLANS = [
       { label: '10 AI-запусков в месяц',            ok: true  },
       { label: '1 подключение к маркетплейсу',       ok: true  },
       { label: 'Все 9 AI-сценариев',                 ok: true  },
-      { label: 'История запусков',                   ok: true  },
+      { label: 'Telegram-уведомления',               ok: true  },
       { label: 'Склад FBO/FBS',                      ok: false },
       { label: 'P&L аналитика',                      ok: false },
-      { label: 'AI советники (6 модулей)',            ok: false },
+      { label: '14 AI-советников',                   ok: false },
+      { label: 'Автопилот и экспорт',                ok: false },
     ],
     cta: 'Начать бесплатно',
     ctaHref: '/register',
@@ -86,10 +95,11 @@ const PLANS = [
       { label: '100 AI-запусков в месяц',            ok: true  },
       { label: '2 подключения к маркетплейсам',      ok: true  },
       { label: 'Все 9 AI-сценариев',                 ok: true  },
-      { label: 'История запусков',                   ok: true  },
+      { label: 'Telegram-уведомления',               ok: true  },
       { label: 'Склад FBO/FBS',                      ok: true  },
       { label: 'P&L аналитика',                      ok: false },
-      { label: 'AI советники (6 модулей)',            ok: false },
+      { label: '14 AI-советников',                   ok: false },
+      { label: 'Автопилот и экспорт',                ok: false },
     ],
     cta: 'Подключить Старт',
     ctaHref: '/register',
@@ -104,10 +114,11 @@ const PLANS = [
       { label: 'Безлимитные AI-запуски',             ok: true  },
       { label: '10 подключений к маркетплейсам',     ok: true  },
       { label: 'Все 9 AI-сценариев',                 ok: true  },
-      { label: 'История запусков',                   ok: true  },
+      { label: 'Telegram-уведомления',               ok: true  },
       { label: 'Склад FBO/FBS',                      ok: true  },
       { label: 'P&L аналитика',                      ok: true  },
-      { label: 'AI советники (6 модулей)',            ok: true  },
+      { label: '14 AI-советников',                   ok: true  },
+      { label: 'Автопилот и экспорт данных',         ok: true  },
     ],
     cta: 'Подключить Бизнес',
     ctaHref: '/register',
@@ -212,7 +223,7 @@ export default function LandingPage() {
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-full text-sm font-medium mb-6">
             <span className="w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
-            12 AI-советников + 9 AI-сценариев
+            18 модулей · 14 AI-советников · 9 AI-сценариев
           </div>
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-slate-900 leading-tight mb-6 tracking-tight">
@@ -269,10 +280,10 @@ export default function LandingPage() {
           {/* Stats strip */}
           <div className="mt-14 grid grid-cols-2 sm:grid-cols-4 gap-6 max-w-3xl mx-auto">
             {[
-              { n: '12+', label: 'AI-советников' },
-              { n: '9',   label: 'AI-сценариев' },
-              { n: '4',   label: 'маркетплейса' },
-              { n: '2 мин', label: 'до первого результата' },
+              { n: '18',    label: 'модулей' },
+              { n: '14',    label: 'AI-советников' },
+              { n: '9',     label: 'AI-сценариев' },
+              { n: '4',     label: 'маркетплейса' },
             ].map(s => (
               <div key={s.n} className="text-center">
                 <div className="text-3xl font-extrabold text-purple-600">{s.n}</div>
@@ -334,7 +345,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="text-center mb-12">
             <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">Всё для управления продажами</h2>
-            <p className="text-slate-500 text-lg max-w-2xl mx-auto">12 модулей — от склада до отзывов. В каждом — AI-советник, который анализирует ваши данные.</p>
+            <p className="text-slate-500 text-lg max-w-2xl mx-auto">18 модулей — от склада и поставок до отзывов и автопилота цен. В каждом — AI-советник, который анализирует ваши данные.</p>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {MODULES.map(m => (
@@ -353,7 +364,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="text-center mb-12">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-full text-sm font-medium mb-4">
-              🤖 12 AI-советников
+              🤖 14 AI-советников
             </div>
             <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">AI внутри каждого модуля</h2>
             <p className="text-slate-500 text-lg max-w-2xl mx-auto">Не просто данные — конкретные рекомендации. Жмёте одну кнопку, получаете план действий.</p>
@@ -484,7 +495,7 @@ export default function LandingPage() {
             ))}
           </div>
           <p className="text-center text-sm text-slate-400 mt-8">
-            Оплата банковской картой, ЮKassa, Robokassa, USDT
+            Оплата банковской картой · банковский перевод (счёт-фактура)
           </p>
         </div>
       </section>
