@@ -56,6 +56,7 @@ import { startAutomationWorker } from './queue/workers/automation.worker';
 import { startSyncWorker } from './queue/workers/sync.worker';
 import { startAlertWorker } from './queue/workers/alert.worker';
 import { db } from './db';
+import { runMigrations } from './db/migrate';
 
 const app = express();
 
@@ -176,8 +177,15 @@ process.on('uncaughtException', (err) => {
   setTimeout(() => process.exit(1), 500);
 });
 
-app.listen(config.port, () => {
-  console.log(`NeuroGrid backend :${config.port} [${config.nodeEnv}]`);
-});
+runMigrations(db)
+  .then(() => {
+    app.listen(config.port, () => {
+      console.log(`NeuroGrid backend :${config.port} [${config.nodeEnv}]`);
+    });
+  })
+  .catch(err => {
+    console.error('[startup] migration failed, refusing to start:', err.message);
+    process.exit(1);
+  });
 
 export default app;
