@@ -325,6 +325,39 @@ function msUntilFirst3AM(): number {
   return next.getTime() - now.getTime();
 }
 
+// Node's setTimeout silently wraps delays > 2^31-1 ms (~24.8 days) to 1 ms,
+// causing infinite tight loops. This helper breaks long waits into safe chunks
+// and adds error back-off so a failing job never spins without pause.
+const MAX_SAFE_TIMEOUT_MS = 2_147_483_647; // 2^31 − 1
+
+function scheduleSafely(
+  label: string,
+  getDelayMs: () => number,
+  work: () => Promise<void>,
+  errorBackoffMs = 15 * 60_000,
+): void {
+  const delay = getDelayMs();
+  if (delay > MAX_SAFE_TIMEOUT_MS) {
+    // Still far off — sleep at the cap, then re-evaluate
+    setTimeout(() => scheduleSafely(label, getDelayMs, work, errorBackoffMs), MAX_SAFE_TIMEOUT_MS);
+    return;
+  }
+  console.log(`[${label}] next run in ${Math.round(delay / 3_600_000)}h`);
+  setTimeout(() => {
+    // Guard against firing slightly early after an intermediate wake-up
+    if (getDelayMs() > 60_000) {
+      scheduleSafely(label, getDelayMs, work, errorBackoffMs);
+      return;
+    }
+    work()
+      .then(() => scheduleSafely(label, getDelayMs, work, errorBackoffMs))
+      .catch(err => {
+        console.error(`[${label}] failed, retrying in ${errorBackoffMs / 60_000} min:`, err);
+        setTimeout(() => scheduleSafely(label, getDelayMs, work, errorBackoffMs), errorBackoffMs);
+      });
+  }, Math.max(delay, 0));
+}
+
 export function startSyncWorker() {
   // Stock: every hour
   setInterval(() => { runStockSync().catch(console.error); }, 60 * 60 * 1000);
@@ -332,35 +365,18 @@ export function startSyncWorker() {
   setInterval(() => { runFinanceSync().catch(console.error); }, 6 * 60 * 60 * 1000);
   // Pricing rules: every 6 hours
   setInterval(() => { runPricingWorker().catch(console.error); }, 6 * 60 * 60 * 1000);
-  // Digest: daily at 08:00
-  setTimeout(() => {
-    runDailyDigest().catch(console.error);
-    setInterval(() => { runDailyDigest().catch(console.error); }, 24 * 60 * 60 * 1000);
-  }, msUntilNext8AM());
+
+  // Digest: daily at 08:00 Moscow — scheduleSafely re-schedules after each run
+  scheduleSafely('digest', msUntilNext8AM, runDailyDigest);
 
   // Monthly renewal: 1st of month at 03:00 Moscow
-  function scheduleNextRenewal() {
-    const ms = msUntilFirst3AM();
-    console.log(`[renewal] next run in ${Math.round(ms / 3600000)}h`);
-    setTimeout(() => {
-      runMonthlyRenewal().catch(console.error);
-      scheduleNextRenewal();
-    }, ms);
-  }
-  scheduleNextRenewal();
+  // msUntilFirst3AM can return ~29 days (> 2^31-1 ms) — safe wrapper required
+  scheduleSafely('renewal', msUntilFirst3AM, runMonthlyRenewal);
 
   // Weekly reports: every Monday at 09:00 Moscow
-  function scheduleNextWeeklyReports() {
-    const ms = msUntilNextMonday9AM();
-    console.log(`[weekly-reports] next run in ${Math.round(ms / 3600000)}h`);
-    setTimeout(() => {
-      runWeeklyReports().catch(console.error);
-      scheduleNextWeeklyReports();
-    }, ms);
-  }
-  scheduleNextWeeklyReports();
+  scheduleSafely('weekly-reports', msUntilNextMonday9AM, runWeeklyReports);
 
-  // Run once on startup after 30s delay
+  // Run once on startup after short delay
   setTimeout(() => { runStockSync().catch(console.error); }, 30_000);
   setTimeout(() => { runFinanceSync().catch(console.error); }, 60_000);
 }
